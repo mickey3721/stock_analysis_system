@@ -29,7 +29,131 @@ A-share stock intelligent analysis system with 徐小明交易系统 + 缠论
 - **前端**: Vue3 + Vant + ECharts
 - **数据**: akshare + 本地CSV缓存
 
-## 启动方式
+## 项目部署
+
+### 方式一：本地源码部署
+
+#### 1. 克隆项目
+```bash
+git clone https://github.com/mickey3721/stock_analysis_system.git
+cd stock_analysis_system
+```
+
+#### 2. 后端部署
+```bash
+# 创建虚拟环境
+cd stock_analysis
+python -m venv .venv
+
+# 激活虚拟环境
+# Windows:
+.venv\Scripts\activate
+# Linux/Mac:
+source .venv/bin/activate
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 启动后端
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8899
+```
+
+#### 3. 前端部署
+```bash
+# 安装依赖
+cd frontend
+npm install
+
+# 开发模式
+npm run dev
+
+# 生产构建
+npm run build
+```
+
+---
+
+### 方式二：Docker镜像部署
+
+#### 1. 后端Dockerfile
+```dockerfile
+# stock_analysis/Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+EXPOSE 8899
+
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8899"]
+```
+
+#### 2. 前端Dockerfile
+```dockerfile
+# frontend/Dockerfile
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+#### 3. Docker Compose一键部署
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  backend:
+    build: ./stock_analysis
+    ports:
+      - "8899:8899"
+    volumes:
+      - ./stock_analysis/data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+```
+
+#### 4. 部署命令
+```bash
+# 构建并启动所有服务
+docker-compose up -d
+
+# 查看日志
+docker-compose logs -f
+
+# 停止服务
+docker-compose down
+```
+
+#### 5. 访问地址
+- 前端: http://localhost:3000
+- 后端API: http://localhost:8899
+
+---
+
+## 启动方式（开发模式）
 
 ### 后端
 ```bash
