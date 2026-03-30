@@ -1,0 +1,35 @@
+# 股票智能分析系统依赖
+
+# 数据采集
+akshare>=1.12.0
+requests>=2.31.0
+yfinance>=0.2.0
+
+# 数据处理
+pandas>=2.0.0
+numpy>=1.24.0
+
+# 技术分析
+ta-lib>=0.4.28
+
+# 缠论分析（专业库）
+czsc>=0.10.0
+
+# 网页爬取（备用）
+scrapling>=0.4.0
+
+# Web框架
+flask>=2.3.0
+dash>=2.14.0
+plotly>=5.18.0
+
+# API框架
+fastapi>=0.100.0
+uvicorn>=0.23.0
+pydantic>=2.0.0
+
+# 定时任务
+apscheduler>=3.10.0
+
+# 数据库
+sqlalchemy>=2.0.0

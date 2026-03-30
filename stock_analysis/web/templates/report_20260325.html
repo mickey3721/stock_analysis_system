@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A股多级别缠论分析报告 · 2026年3月25日（昨日复盘）</title>
+<style>
+:root{
+  --red:#e03535; --green:#1aaa55; --bg:#0d0f1a; --card:#141828;
+  --card2:#1a1f35; --border:#252a42; --text:#e2e8f0; --muted:#8899aa;
+  --accent:#4f8ef7; --gold:#f0b429; --warn:#ff8c42; --purple:#cc88ff;
+  --cyan:#00d4aa; --orange:#ff6b35;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:20px 16px 40px;}
+
+.header{text-align:center;padding:28px 20px 22px;border-bottom:1px solid var(--border);margin-bottom:26px;}
+.header h1{font-size:21px;font-weight:700;letter-spacing:1px;}
+.header .sub{margin-top:6px;font-size:13px;color:var(--muted);}
+.badge{display:inline-block;padding:4px 14px;background:rgba(79,142,247,.12);border:1px solid rgba(79,142,247,.3);border-radius:20px;font-size:12px;color:var(--accent);margin-top:10px;}
+
+.sec{font-size:14px;font-weight:700;color:var(--accent);border-left:3px solid var(--accent);padding-left:10px;margin:26px 0 14px;letter-spacing:.5px;}
+
+/* 大盘卡片 */
+.mband{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;}
+@media(max-width:720px){.mband{grid-template-columns:repeat(2,1fr);}}
+.midx{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+.midx .mn{font-size:11px;color:var(--muted);}
+.midx .mv{font-size:22px;font-weight:700;margin:4px 0 2px;}
+.midx .mc{font-size:12px;font-weight:600;}
+.midx .mm{font-size:11px;color:var(--muted);line-height:1.75;margin-top:6px;}
+
+.up{color:var(--red);} .dn{color:var(--green);} .neu{color:var(--gold);}
+.wpurple{color:var(--purple);} .wcyan{color:var(--cyan);}
+
+/* 摘要 */
+.summary-box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:22px;}
+.summary-box .sb-title{font-size:13px;font-weight:700;color:var(--gold);margin-bottom:12px;}
+.sb-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+@media(max-width:680px){.sb-grid{grid-template-columns:repeat(2,1fr);}}
+.sb-item{text-align:center;background:var(--card2);border-radius:8px;padding:10px 6px;}
+.sb-val{font-size:17px;font-weight:700;margin-bottom:2px;}
+.sb-label{font-size:10px;color:var(--muted);}
+
+/* 外围市场 */
+.wai-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;}
+@media(max-width:720px){.wai-grid{grid-template-columns:repeat(2,1fr);}}
+.wai-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px 14px;}
+.wai-card .wn{font-size:11px;color:var(--muted);}
+.wai-card .wv{font-size:18px;font-weight:700;margin:3px 0 2px;}
+.wai-card .wc{font-size:12px;font-weight:600;}
+.wai-card .wr{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.6;}
+
+/* 多级别 */
+.timeframe-box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:22px;}
+.tf-title{font-size:13px;font-weight:700;color:var(--cyan);margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+.tf-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+@media(max-width:640px){.tf-grid{grid-template-columns:1fr;}}
+.tf-item{background:var(--card2);border-radius:8px;padding:12px 14px;}
+.tf-item .tf-name{font-size:11px;color:var(--muted);margin-bottom:6px;}
+.tf-item .tf-status{font-size:13px;font-weight:700;margin-bottom:4px;}
+.tf-item .tf-desc{font-size:11px;color:#c8d4e3;line-height:1.65;}
+
+/* 个股卡片 */
+.scards{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:26px;}
+@media(max-width:700px){.scards{grid-template-columns:1fr;}}
+.sc{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.sc-head{display:flex;justify-content:space-between;align-items:flex-start;padding:14px 16px 10px;border-bottom:1px solid var(--border);}
+.sc-name{font-size:15px;font-weight:700;}
+.sc-code{font-size:11px;color:var(--muted);margin-top:2px;}
+.sc-badge{display:inline-block;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:700;margin-left:5px;vertical-align:middle;}
+.bdn{background:rgba(26,170,85,.18);color:var(--green);}
+.bup{background:rgba(224,53,53,.18);color:var(--red);}
+.bneu{background:rgba(240,180,41,.18);color:var(--gold);}
+.bblue{background:rgba(79,142,247,.18);color:var(--accent);}
+.bpurple{background:rgba(204,136,255,.18);color:var(--purple);}
+.bcyan{background:rgba(0,212,170,.18);color:var(--cyan);}
+.sc-price{font-size:22px;font-weight:700;}
+.sc-pct{font-size:12px;font-weight:600;margin-top:2px;}
+
+/* 分时图 */
+.sc-chart{padding:10px 16px 4px;}
+.chart-wrap{width:100%;height:140px;background:var(--card2);border-radius:6px;overflow:hidden;}
+.chart-wrap svg{width:100%;height:100%;display:block;}
+.chart-label{font-size:10px;color:var(--muted);margin-bottom:4px;}
+
+/* 数据网格 */
+.sc-detail{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;padding:10px 16px;}
+.di{font-size:11px;}.di .dl{color:var(--muted);}.di .dv{font-weight:600;margin-top:1px;}
+
+/* 多级别分析 */
+.sc-multi{margin:2px 16px 10px;background:var(--card2);border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.85;}
+.sc-multi .mt{font-size:11px;font-weight:700;color:var(--cyan);margin-bottom:8px;}
+.time-row{display:flex;gap:10px;margin-bottom:7px;flex-wrap:wrap;}
+.time-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;background:rgba(79,142,247,.15);color:var(--accent);flex-shrink:0;}
+.time-content{flex:1;min-width:180px;color:#c8d4e3;}
+
+/* 分析文本 */
+.sc-ana{margin:2px 16px 10px;background:var(--card2);border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.85;}
+.sc-ana .at{font-size:11px;font-weight:700;color:var(--accent);margin-bottom:7px;}
+.sc-ana p{color:#c8d4e3;margin-bottom:4px;}
+.hl{color:var(--gold);font-weight:600;}
+.rt{color:var(--red);font-weight:600;}
+.gt{color:var(--green);font-weight:600;}
+.wt{color:var(--warn);font-weight:600;}
+.ct{color:var(--cyan);font-weight:600;}
+
+/* 基本面 */
+.sc-fund{margin:2px 16px 12px;background:rgba(79,142,247,.06);border:1px solid rgba(79,142,247,.15);border-radius:8px;padding:11px 14px;font-size:11px;line-height:1.8;color:#c8d4e3;}
+.sc-fund .ft{font-size:11px;font-weight:700;color:var(--accent);margin-bottom:6px;}
+
+/* 标签 */
+.tags{display:flex;gap:7px;flex-wrap:wrap;padding:0 16px 14px;}
+.tag{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;}
+.tag-b{background:rgba(224,53,53,.13);color:var(--red);border:1px solid rgba(224,53,53,.28);}
+.tag-s{background:rgba(26,170,85,.13);color:var(--green);border:1px solid rgba(26,170,85,.28);}
+.tag-n{background:rgba(240,180,41,.13);color:var(--gold);border:1px solid rgba(240,180,41,.28);}
+.tag-a{background:rgba(79,142,247,.13);color:var(--accent);border:1px solid rgba(79,142,247,.28);}
+.tag-p{background:rgba(204,136,255,.13);color:var(--purple);border:1px solid rgba(204,136,255,.28);}
+.tag-c{background:rgba(0,212,170,.13);color:var(--cyan);border:1px solid rgba(0,212,170,.28);}
+
+/* 操作策略表 */
+.optable{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:22px;}
+.ophead{padding:14px 18px;background:var(--card2);border-bottom:1px solid var(--border);font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;}
+.ophead .dot{width:8px;height:8px;border-radius:50%;background:var(--gold);}
+table.ot{width:100%;border-collapse:collapse;font-size:12px;}
+table.ot th{padding:9px 13px;text-align:left;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border);}
+table.ot td{padding:10px 13px;border-bottom:1px solid rgba(37,42,66,.5);vertical-align:top;line-height:1.7;}
+table.ot tr:last-child td{border-bottom:none;}
+.act{display:inline-block;padding:2px 9px;border-radius:4px;font-size:11px;font-weight:700;}
+.act-buy{background:rgba(224,53,53,.14);color:var(--red);}
+.act-sell{background:rgba(26,170,85,.14);color:var(--green);}
+.act-hold{background:rgba(240,180,41,.14);color:var(--gold);}
+.act-watch{background:rgba(79,142,247,.14);color:var(--accent);}
+.act-avoid{background:rgba(204,136,255,.14);color:var(--purple);}
+
+/* 完全分类 */
+.scenario{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:22px;}
+.scene-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+@media(max-width:640px){.scene-grid{grid-template-columns:1fr;}}
+.scene-card{border-radius:9px;padding:14px 15px;font-size:12px;line-height:1.85;}
+.scene-bull{background:rgba(224,53,53,.07);border:1px solid rgba(224,53,53,.2);}
+.scene-bear{background:rgba(26,170,85,.07);border:1px solid rgba(26,170,85,.2);}
+.scene-title{font-weight:700;font-size:12px;margin-bottom:8px;}
+.scene-bull .scene-title{color:var(--red);}
+.scene-bear .scene-title{color:var(--green);}
+.scene-card p{color:#c8d4e3;margin-bottom:5px;}
+
+/* 消息面板 */
+.news-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:22px;}
+@media(max-width:640px){.news-grid{grid-template-columns:1fr;}}
+.news-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 16px;}
+.news-title{font-size:12px;font-weight:700;color:var(--gold);margin-bottom:10px;}
+.news-item{font-size:11px;color:#c8d4e3;line-height:1.75;padding:5px 0;border-bottom:1px solid rgba(37,42,66,.4);}
+.news-item:last-child{border-bottom:none;}
+.news-item .ni-tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700;margin-right:5px;background:rgba(79,142,247,.15);color:var(--accent);}
+.news-item .ni-tag.bull{background:rgba(224,53,53,.15);color:var(--red);}
+.news-item .ni-tag.bear{background:rgba(26,170,85,.15);color:var(--green);}
+.news-item .ni-tag.neu{background:rgba(240,180,41,.15);color:var(--gold);}
+
+/* 原则 */
+.principle{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:22px;}
+.p3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+@media(max-width:640px){.p3{grid-template-columns:1fr;}}
+.pcard{background:var(--card2);border-radius:8px;padding:13px 14px;font-size:12px;line-height:1.8;color:#c8d4e3;}
+.pcard .pt{font-size:11px;font-weight:700;margin-bottom:7px;}
+
+.recap-banner{background:linear-gradient(135deg,rgba(26,170,85,.08),rgba(224,53,53,.08));border:1px solid rgba(240,180,41,.2);border-radius:10px;padding:14px 16px;margin-bottom:22px;font-size:12px;line-height:1.9;color:#d0dcea;}
+.recap-banner .rb-title{font-size:13px;font-weight:700;color:var(--gold);margin-bottom:8px;}
+.recap-banner strong{color:var(--gold);}
+
+.divider{height:1px;background:var(--border);margin:22px 0;}
+.disclaimer{text-align:center;font-size:11px;color:var(--muted);padding:16px;line-height:1.8;}
+</style>
+</head>
+<body>
+
+<!-- ===== HEADER ===== -->
+<div class="header">
+  <h1>📊 A股多级别缠论分析 · 昨日复盘报告</h1>
+  <div class="sub">上证指数 · 沪深300 · 创业板指 | 中国巨石(600176) · 安迪苏(600299) · 科技ETF(515000)</div>
+  <div class="badge">📅 2026年3月25日（周三）复盘&nbsp;|&nbsp;日线·5分钟·分时三级别共振&nbsp;|&nbsp;缠论量化框架</div>
+</div>
+
+<!-- ===== 复盘摘要 ===== -->
+<div class="recap-banner">
+  <div class="rb-title">☀️ 3月25日行情全日复盘摘要</div>
+  <strong>核心结论：</strong>A股延续反弹态势，三大指数集体放量上涨，<strong>沪指重返3900点</strong>，创业板指涨逾2%站上3300点。全市场近4900只个股上涨，成交额放量至2.19万亿元（较前日扩量968亿），赚钱效应显著改善。<br>
+  <strong>资金动向：</strong>北向资金净流入超90亿元（3月以来新高），内资主力转为净流入。电力/算力/AI/CPO等科技方向资金持续涌入，周期板块（原油/煤炭）持续分化。<br>
+  <strong>外围背景：</strong>日经225涨3.01%，恒生指数涨0.95%，欧美股市平稳；黄金大涨+3.49%，国际油价因美伊和谈消息大跌-4.19%，美元指数微涨至99.38。
+</div>
+
+<!-- ===== 大盘指数（昨收） ===== -->
+<div class="sec">大盘指数 · 2026年3月25日收盘数据</div>
+<div class="mband">
+  <div class="midx">
+    <div class="mn">上证指数 · 000001</div>
+    <div class="mv up">3931.84</div>
+    <div class="mc up">▲ +50.40 (+1.30%)</div>
+    <div class="mm">今开 3892.27 &nbsp;|&nbsp; 最高 3933.06<br>最低 3891.82 &nbsp;|&nbsp; 前收 3881.44<br>成交额：<strong style="color:var(--gold)">约1.1万亿</strong><br><strong style="color:var(--red)">重返3900点上方 ⭐</strong></div>
+  </div>
+  <div class="midx">
+    <div class="mn">沪深300 · 000300</div>
+    <div class="mv up">4537.47</div>
+    <div class="mc up">▲ +62.99 (+1.40%)</div>
+    <div class="mm">权重股与成长股同步发力<br>蓝筹修复行情延续<br><strong style="color:var(--gold)">日线中枢：4400-4600</strong><br><strong style="color:var(--red)">站稳中枢上沿</strong></div>
+  </div>
+  <div class="midx">
+    <div class="mn">创业板指 · 399006</div>
+    <div class="mv up">3316.97</div>
+    <div class="mc up">▲ +65.37 (+2.01%)</div>
+    <div class="mm">今开 3290.44 &nbsp;|&nbsp; 强势高开高走<br>AI/算力/CPO板块领涨<br><strong style="color:var(--gold)">重返3300点 ⭐</strong><br><strong style="color:var(--red)">日线上涨段延续</strong></div>
+  </div>
+  <div class="midx">
+    <div class="mn">市场情绪综合</div>
+    <div class="mv up" style="font-size:17px;">强势普涨</div>
+    <div class="mc up">放量突破</div>
+    <div class="mm">两市成交额：<strong style="color:var(--gold)">2.19万亿</strong><br>北向净流入：<strong style="color:var(--red)">+90亿</strong><br>涨停家数：约100家<br>上涨个股：<strong style="color:var(--red)">约4900只</strong></div>
+  </div>
+</div>
+
+<!-- ===== 指数数据摘要 ===== -->
+<div class="summary-box">
+  <div class="sb-title">📡 昨日市场核心指标</div>
+  <div class="sb-grid">
+    <div class="sb-item"><div class="sb-val up">+1.30%</div><div class="sb-label">上证涨幅</div></div>
+    <div class="sb-item"><div class="sb-val up">+2.01%</div><div class="sb-label">创业板涨幅</div></div>
+    <div class="sb-item"><div class="sb-val up">+1.40%</div><div class="sb-label">沪深300涨幅</div></div>
+    <div class="sb-item"><div class="sb-val" style="color:var(--gold)">2.19万亿</div><div class="sb-label">两市成交额</div></div>
+  </div>
+</div>
+
+<!-- ===== 外围市场 ===== -->
+<div class="sec">🌏 外围主要市场（3月25日）</div>
+<div class="wai-grid">
+  <div class="wai-card">
+    <div class="wn">日经225指数</div>
+    <div class="wv up">+3.01%</div>
+    <div class="wc up">▲ 强势大涨</div>
+    <div class="wr">日本股市风险偏好大幅回升<br>美日协议预期升温 · 日元贬值带动出口股</div>
+  </div>
+  <div class="wai-card">
+    <div class="wn">韩国KOSPI</div>
+    <div class="wv up">+1.76%</div>
+    <div class="wc up">▲ 表现强劲</div>
+    <div class="wr">亚太市场整体情绪回暖<br>科技/半导体板块领涨</div>
+  </div>
+  <div class="wai-card">
+    <div class="wn">恒生指数</div>
+    <div class="wv up">+0.95%</div>
+    <div class="wc up">▲ 温和上涨</div>
+    <div class="wr">港股跟随A股回暖<br>科技互联网板块偏强</div>
+  </div>
+  <div class="wai-card">
+    <div class="wn">法国CAC40 / 英国富时100</div>
+    <div class="wv neu">+0.23% / +0.72%</div>
+    <div class="wc neu">▲ 窄幅震荡</div>
+    <div class="wr">欧洲市场多空均衡<br>德国DAX微跌-0.07%</div>
+  </div>
+  <div class="wai-card">
+    <div class="wn">美股（道琼斯/纳指）</div>
+    <div class="wv neu">±0.00%</div>
+    <div class="wc neu">— 窄幅平收</div>
+    <div class="wr">盘前震荡均值±0.00%<br>SpaceX拟启动750亿美元IPO<br>美伊和谈消息干扰盘面</div>
+  </div>
+  <div class="wai-card">
+    <div class="wn">大宗商品</div>
+    <div class="wv up">黄金+3.49%</div>
+    <div class="wc dn">原油-4.19%</div>
+    <div class="wr">黄金：避险+通胀预期驱动<br>原油：美伊和谈方案传出，油价大跌<br>铜：+1.26%，工业需求预期改善</div>
+  </div>
+</div>
+
+<!-- ===== 三级别缠论结构概览 ===== -->
+<div class="sec">📐 三级别缠论结构概览（大盘视角）</div>
+<div class="timeframe-box">
+  <div class="tf-title">多级别走势状态监测 · 昨日收盘判断</div>
+  <div class="tf-grid">
+    <div class="tf-item">
+      <div class="tf-name">📈 日线级别</div>
+      <div class="tf-status" style="color:var(--red)">上涨段生长中</div>
+      <div class="tf-desc">上证从3月低点启动反弹，3月25日放量突破3900，日线中枢由3700-3900上移至3900-4000区域。创业板日线上涨段更强，突破3300整数关口。</div>
+    </div>
+    <div class="tf-item">
+      <div class="tf-name">⏱ 5分钟级别</div>
+      <div class="tf-status" style="color:var(--purple)">上涨中枢上移</div>
+      <div class="tf-desc">大盘全天呈现5分钟高开高走后小幅回踩再拉升结构，创业板5分钟二买成立并延续，3300以上区域构建新的5分钟上涨中枢。</div>
+    </div>
+    <div class="tf-item">
+      <div class="tf-name">⚡ 分时级别</div>
+      <div class="tf-status" style="color:var(--cyan)">强势上涨</div>
+      <div class="tf-desc">创业板分时呈高开小回踩后再度上冲形态，收盘前有所回落但守住日内高点，分时走势健康。算力/AI方向分时多次放量拉升。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 消息面 ===== -->
+<div class="sec">📰 消息面 · 基本面核心信息</div>
+<div class="news-grid">
+  <div class="news-card">
+    <div class="news-title">🔴 市场利好消息</div>
+    <div class="news-item"><span class="ni-tag bull">算力</span>国家数据局：Token调用量两年暴增千倍，从日均1000亿增至140万亿，算力需求持续爆发</div>
+    <div class="news-item"><span class="ni-tag bull">绿电</span>国家数据局局长：推进算电协同工程，新建算力设施绿电占比须超80%，利好电力板块</div>
+    <div class="news-item"><span class="ni-tag bull">光通信</span>深圳推动光模块从800G向1.6T/3.2T升级，支持800G及以上量产，CPO/光模块爆发</div>
+    <div class="news-item"><span class="ni-tag bull">流动性</span>央行开展785亿7天逆回购，加量续做5000亿MLF，保流动性合理充裕</div>
+    <div class="news-item"><span class="ni-tag bull">固态电池</span>午后固态电池板块异动拉升，多股涨停</div>
+    <div class="news-item"><span class="ni-tag bull">北向</span>北向资金净流入90亿+，3月以来新高，外资信心回升</div>
+  </div>
+  <div class="news-card">
+    <div class="news-title">🟢 市场风险/偏空信息</div>
+    <div class="news-item"><span class="ni-tag bear">地缘</span>美方向伊朗提出和谈方案，地缘缓和预期升温，油气/能源板块受压</div>
+    <div class="news-item"><span class="ni-tag bear">原油</span>国内原油主力合约大跌-4.19%，拖累化工/油气板块</div>
+    <div class="news-item"><span class="ni-tag neu">估值</span>当前宏观周期判定为"过热"，商品>股票>现金>债券，警惕通胀风险</div>
+    <div class="news-item"><span class="ni-tag neu">风险</span>量能未持续放大（成交额 &lt; 2万亿）反弹动能可能衰减，需跟踪</div>
+    <div class="news-item"><span class="ni-tag bear">玻纤</span>中国巨石所在玻璃玻纤板块整体跌-0.23%，行业供需偏弱</div>
+    <div class="news-item"><span class="ni-tag neu">美股</span>美股平盘，SpaceX拟750亿美元IPO，虹吸资金效应需关注</div>
+  </div>
+</div>
+
+<!-- ===== 个股及ETF分析 ===== -->
+<div class="sec">个股及ETF · 多级别缠论深度分析</div>
+<div class="scards">
+
+  <!-- ==== 600176 中国巨石 ==== -->
+  <div class="sc">
+    <div class="sc-head">
+      <div>
+        <div class="sc-name">中国巨石<span class="sc-badge bdn">弱势分化</span></div>
+        <div class="sc-code">600176 · SH &nbsp;|&nbsp; 全球玻纤龙头 · 总市值约1005亿</div>
+      </div>
+      <div style="text-align:right">
+        <div class="sc-price dn">25.29</div>
+        <div class="sc-pct dn">昨收（3月25日）</div>
+      </div>
+    </div>
+
+    <div class="sc-chart">
+      <div class="chart-label">3月25日分时走势示意图（昨收25.29，前收约24.15）</div>
+      <div class="chart-wrap">
+        <svg viewBox="0 0 340 140" preserveAspectRatio="none">
+          <!-- 昨收参考线（前收24.15） -->
+          <line x1="0" y1="90" x2="340" y2="90" stroke="#3a4060" stroke-width="1" stroke-dasharray="3,3"/>
+          <text x="3" y="85" font-size="9" fill="#556080">前收≈24.15</text>
+          <!-- 走势：高开后震荡，大盘普涨拉动，收于25.29 -->
+          <!-- 前收24.15，开盘约24.80高开，最高25.60，最低24.55，收25.29 -->
+          <!-- y轴：范围24.2-25.8，范围1.6 chartH=120, padding=10 -->
+          <!-- y = 10 + 120 - ((p-24.2)/1.6)*120 -->
+          <!-- 24.80 → y=10+120-((24.80-24.2)/1.6)*120=130-45=85 -->
+          <!-- 25.60 → y=10+120-((25.60-24.2)/1.6)*120=130-105=25 -->
+          <!-- 24.55 → y=10+120-((24.55-24.2)/1.6)*120=130-26.25=103.75≈104 -->
+          <!-- 25.29 → y=10+120-((25.29-24.2)/1.6)*120=130-81.75=48.25≈48 -->
+          <polyline
+            points="0,85 20,80 45,72 70,58 100,48 130,42 155,25 175,35 200,48 220,55 240,50 265,52 295,50 320,50 340,48"
+            fill="none" stroke="var(--red)" stroke-width="2"/>
+          <polygon
+            points="0,85 20,80 45,72 70,58 100,48 130,42 155,25 175,35 200,48 220,55 240,50 265,52 295,50 320,50 340,48 340,140 0,140"
+            fill="rgba(224,53,53,.12)"/>
+          <circle cx="0" cy="85" r="4" fill="var(--red)" opacity=".8"/>
+          <text x="5" y="78" font-size="9" fill="var(--red)">24.80开</text>
+          <circle cx="155" cy="25" r="4" fill="var(--gold)" opacity=".9"/>
+          <text x="160" y="20" font-size="9" fill="var(--gold)">25.60高</text>
+          <circle cx="80" cy="104" r="3" fill="var(--green)" opacity=".7"/>
+          <text x="85" y="116" font-size="9" fill="var(--green)">24.55低</text>
+          <circle cx="340" cy="48" r="4" fill="var(--red)"/>
+          <text x="270" y="43" font-size="9" fill="var(--red)">收25.29▲</text>
+        </svg>
+      </div>
+    </div>
+
+    <div class="sc-detail">
+      <div class="di"><div class="dl">开盘(估)</div><div class="dv up">24.80</div></div>
+      <div class="di"><div class="dl">最高(估)</div><div class="dv up">25.60</div></div>
+      <div class="di"><div class="dl">最低(估)</div><div class="dv dn">24.55</div></div>
+      <div class="di"><div class="dl">昨收(3/25)</div><div class="dv up">25.29</div></div>
+      <div class="di"><div class="dl">今日昨收(3/26)</div><div class="dv">25.29</div></div>
+      <div class="di"><div class="dl">今日现价</div><div class="dv dn">≈25.1</div></div>
+      <div class="di"><div class="dl">总市值</div><div class="dv">约1005亿</div></div>
+      <div class="di"><div class="dl">市盈率(动)</div><div class="dv">30.60x</div></div>
+      <div class="di"><div class="dl">板块表现</div><div class="dv dn">玻纤板块-0.23%</div></div>
+    </div>
+
+    <div class="sc-multi">
+      <div class="mt">⏱ 三级别缠论结构分析（3月25日）</div>
+      <div class="time-row">
+        <span class="time-tag">日线</span>
+        <span class="time-content"><span class="wt">与大盘背离</span>——大盘普涨但中国巨石仅小幅跟涨（约+4.7%较前收），上涨力度弱于指数。日线处于<span class="wt">中枢震荡</span>阶段，中枢区间估计23.50-26.00，当前价处于中枢内，无日线三买形成。</span>
+      </div>
+      <div class="time-row">
+        <span class="time-tag">5分钟</span>
+        <span class="time-content">5分钟呈<span class="gt">上涨后回踩</span>结构，大盘强势带动高开，但量能不强，回踩幅度较大（高点25.60回落至24.55）。5分钟中枢尚未向上突破，属于<span class="wt">弱势跟涨</span>。</span>
+      </div>
+      <div class="time-row">
+        <span class="time-tag">分时</span>
+        <span class="time-content">分时高开冲高后宽幅震荡，振幅约4.3%，尾盘收于25.29。走势<span class="wt">与大盘缺乏共振</span>，未能同步放量，分时上涨段力度偏弱。</span>
+      </div>
+    </div>
+
+    <div class="sc-ana">
+      <div class="at">【缠论综合研判】</div>
+      <p>▸ <span class="hl">走势特征：</span>大盘涨1.3%但玻纤板块跌0.23%，<span class="wt">中国巨石虽有跟涨但属弱势补涨</span>，资金兴趣不足。日线中枢震荡格局未变。</p>
+      <p>▸ <span class="hl">关键位置：</span>日线支撑23.50（中枢下沿），压力26.00（中枢上沿）。5分钟关键支撑24.55，压力25.60。</p>
+      <p>▸ <span class="hl">研判结论：</span><span class="wt">三级别无明确共振信号</span>，继续回避。今日(3/26)已跌破25.29，维持下行态势。</p>
+    </div>
+
+    <div class="sc-fund">
+      <div class="ft">📋 基本面摘要（截至2025年年报）</div>
+      <strong style="color:var(--red)">营收+19%至188.8亿</strong> · <strong style="color:var(--red)">净利润+34%至32.85亿</strong> · 扣非净利润+95%至34.8亿<br>
+      毛利率33.12%（逐季修复，Q4达35.06%）· 现金流42亿（同比翻倍）· 资产负债率40.41%<br>
+      机构预测2026E EPS=1.29元，对应PE约17.6倍 | 机构给出"建议关注"/"买入"评级<br>
+      <span style="color:var(--warn)">⚠ 风险：行业产能投放超预期 · 玻纤价格回升低于预期 · 房地产需求疲软</span>
+    </div>
+
+    <div class="tags">
+      <span class="tag tag-n">日线中枢震荡</span>
+      <span class="tag tag-s">弱势跟涨</span>
+      <span class="tag tag-n">与大盘背离</span>
+      <span class="tag tag-a">回避观望</span>
+      <span class="tag tag-p">基本面改善</span>
+    </div>
+  </div>
+
+  <!-- ==== 600299 安迪苏 ==== -->
+  <div class="sc">
+    <div class="sc-head">
+      <div>
+        <div class="sc-name">安迪苏<span class="sc-badge bneu">震荡整理</span></div>
+        <div class="sc-code">600299 · SH &nbsp;|&nbsp; 蛋氨酸龙头 · 总市值约426亿</div>
+      </div>
+      <div style="text-align:right">
+        <div class="sc-price" style="color:var(--gold)">13.72</div>
+        <div class="sc-pct" style="color:var(--gold)">昨收（3月25日）</div>
+      </div>
+    </div>
+
+    <div class="sc-chart">
+      <div class="chart-label">3月25日分时走势示意图（昨收13.72，大盘普涨日表现中性）</div>
+      <div class="chart-wrap">
+        <svg viewBox="0 0 340 140" preserveAspectRatio="none">
+          <!-- 前收约13.20参考线 -->
+          <line x1="0" y1="95" x2="340" y2="95" stroke="#3a4060" stroke-width="1" stroke-dasharray="3,3"/>
+          <text x="3" y="89" font-size="9" fill="#556080">前收≈13.20</text>
+          <!-- 大盘普涨日，安迪苏小幅拉升，13.72收盘 -->
+          <!-- 前收13.20，开盘13.40，最高14.00，最低13.30，收13.72 -->
+          <!-- y轴范围13.1-14.2，范围1.1，chartH=120 -->
+          <polyline
+            points="0,82 30,76 60,64 85,48 110,42 135,30 160,38 185,52 210,62 235,68 260,64 290,66 320,64 340,58"
+            fill="none" stroke="var(--red)" stroke-width="2"/>
+          <polygon
+            points="0,82 30,76 60,64 85,48 110,42 135,30 160,38 185,52 210,62 235,68 260,64 290,66 320,64 340,58 340,140 0,140"
+            fill="rgba(224,53,53,.12)"/>
+          <circle cx="0" cy="82" r="4" fill="var(--red)" opacity=".8"/>
+          <text x="5" y="76" font-size="9" fill="var(--red)">13.40开</text>
+          <circle cx="135" cy="30" r="4" fill="var(--gold)" opacity=".9"/>
+          <text x="140" y="25" font-size="9" fill="var(--gold)">14.00高</text>
+          <circle cx="100" cy="108" r="3" fill="var(--green)" opacity=".7"/>
+          <text x="105" y="120" font-size="9" fill="var(--green)">13.30低</text>
+          <circle cx="340" cy="58" r="4" fill="var(--red)"/>
+          <text x="270" y="53" font-size="9" fill="var(--red)">收13.72▲</text>
+        </svg>
+      </div>
+    </div>
+
+    <div class="sc-detail">
+      <div class="di"><div class="dl">开盘(估)</div><div class="dv up">13.40</div></div>
+      <div class="di"><div class="dl">最高(估)</div><div class="dv up">14.00</div></div>
+      <div class="di"><div class="dl">最低(估)</div><div class="dv dn">13.30</div></div>
+      <div class="di"><div class="dl">昨收(3/25)</div><div class="dv up">13.72</div></div>
+      <div class="di"><div class="dl">今日现价(3/26)</div><div class="dv">≈13.72</div></div>
+      <div class="di"><div class="dl">市盈率</div><div class="dv">36.92x</div></div>
+      <div class="di"><div class="dl">总市值</div><div class="dv">426亿</div></div>
+      <div class="di"><div class="dl">换手率</div><div class="dv">0.53%</div></div>
+      <div class="di"><div class="dl">近期净利润</div><div class="dv up">11.55亿</div></div>
+    </div>
+
+    <div class="sc-multi">
+      <div class="mt">⏱ 三级别缠论结构分析（3月25日）</div>
+      <div class="time-row">
+        <span class="time-tag">日线</span>
+        <span class="time-content">大盘普涨日安迪苏同步上涨（+3.9%估），日线处于<span class="rt">中枢震荡向上</span>阶段，中枢区间约12.50-14.50。当前在中枢中部偏上位置，日线结构相对健康。</span>
+      </div>
+      <div class="time-row">
+        <span class="time-tag">5分钟</span>
+        <span class="time-content">5分钟呈<span class="rt">上涨后高位震荡</span>结构，冲高14.00后回落整理，5分钟上涨段结束进入5分钟中枢阶段（13.50-14.00区间）。</span>
+      </div>
+      <div class="time-row">
+        <span class="time-tag">分时</span>
+        <span class="time-content">分时高开上冲后小幅回踩，尾盘小反弹收于13.72，形成<span class="wt">分时顶背驰后小回调</span>形态，尾盘守住盘中重要支撑位。</span>
+      </div>
+    </div>
+
+    <div class="sc-ana">
+      <div class="at">【缠论综合研判】</div>
+      <p>▸ <span class="hl">走势特征：</span>大盘普涨日安迪苏跟涨，但<span class="wt">涨幅低于创业板</span>，表明资金关注度有限。日线中枢震荡维持。</p>
+      <p>▸ <span class="hl">关键位置：</span>日线支撑12.50（中枢下沿），压力14.50（中枢上沿）。5分钟支撑13.30，阻力14.00。</p>
+      <p>▸ <span class="hl">研判结论：</span><span class="wt">日线中枢，5分钟短级别偏弱</span>。3/25的涨幅在今日(3/26)未能持续，目前13.72附近震荡，<span class="wt">等待方向选择</span>。</p>
+    </div>
+
+    <div class="sc-fund">
+      <div class="ft">📋 基本面摘要</div>
+      <strong style="color:var(--red)">2025年净利润11.55亿元</strong>（同比增长） · 营收同比+11% · 市盈率36.92倍<br>
+      <strong style="color:var(--red)">蛋氨酸涨价：固体蛋氨酸突破40元/公斤</strong>，受油价高位支撑（注：油价后续下跌或改变成本端）<br>
+      维生素行业出现"涨价潮"，供需偏紧，公司液体蛋氨酸产能灵活调整<br>
+      汇添富等机构近期密集调研 · 3月18日签署定增募资监管协议<br>
+      <span style="color:var(--warn)">⚠ 风险：油价大跌(-4.2%)或影响蛋氨酸原材料成本逻辑；估值偏高(PE约37倍)</span>
+    </div>
+
+    <div class="tags">
+      <span class="tag tag-n">日线中枢震荡</span>
+      <span class="tag tag-n">5分钟高位整理</span>
+      <span class="tag tag-b">蛋氨酸涨价利好</span>
+      <span class="tag tag-a">等待方向确认</span>
+    </div>
+  </div>
+
+  <!-- ==== 515000 科技ETF ==== -->
+  <div class="sc">
+    <div class="sc-head">
+      <div>
+        <div class="sc-name">科技ETF<span class="sc-badge bup">强势上涨 ⭐</span></div>
+        <div class="sc-code">515000 · SH &nbsp;|&nbsp; 华宝中证科技龙头ETF</div>
+      </div>
+      <div style="text-align:right">
+        <div class="sc-price up">1.005</div>
+        <div class="sc-pct up">昨收（3月25日）</div>
+      </div>
+    </div>
+
+    <div class="sc-chart">
+      <div class="chart-label">3月25日分时走势示意图（跟随科技板块大涨，AI/算力主题强势）</div>
+      <div class="chart-wrap">
+        <svg viewBox="0 0 340 140" preserveAspectRatio="none">
+          <!-- 前收约0.976参考线 -->
+          <line x1="0" y1="95" x2="340" y2="95" stroke="#3a4060" stroke-width="1" stroke-dasharray="3,3"/>
+          <text x="3" y="89" font-size="9" fill="#556080">前收≈0.976</text>
+          <!-- 科技ETF随创业板强势上涨 -->
+          <!-- 前收0.976，开盘0.985，最高1.020，最低0.980，收1.005 -->
+          <polyline
+            points="0,90 25,84 55,72 80,56 110,40 140,28 165,22 190,32 215,44 240,52 265,48 295,50 320,50 340,52"
+            fill="none" stroke="var(--purple)" stroke-width="2"/>
+          <polygon
+            points="0,90 25,84 55,72 80,56 110,40 140,28 165,22 190,32 215,44 240,52 265,48 295,50 320,50 340,52 340,140 0,140"
+            fill="rgba(204,136,255,.12)"/>
+          <circle cx="0" cy="90" r="4" fill="var(--purple)" opacity=".8"/>
+          <text x="5" y="84" font-size="9" fill="var(--purple)">0.985开</text>
+          <circle cx="165" cy="22" r="4" fill="var(--gold)" opacity=".9"/>
+          <text x="170" y="17" font-size="9" fill="var(--gold)">1.020高</text>
+          <circle cx="50" cy="108" r="3" fill="var(--green)" opacity=".7"/>
+          <text x="55" y="120" font-size="9" fill="var(--green)">0.980低</text>
+          <circle cx="340" cy="52" r="4" fill="var(--purple)"/>
+          <text x="265" y="47" font-size="9" fill="var(--purple)">收1.005▲</text>
+        </svg>
+      </div>
+    </div>
+
+    <div class="sc-detail">
+      <div class="di"><div class="dl">开盘(估)</div><div class="dv up">0.985</div></div>
+      <div class="di"><div class="dl">最高(估)</div><div class="dv up">1.020</div></div>
+      <div class="di"><div class="dl">最低(估)</div><div class="dv">0.980</div></div>
+      <div class="di"><div class="dl">昨收(3/25)</div><div class="dv up">1.005</div></div>
+      <div class="di"><div class="dl">今日昨收(3/26)</div><div class="dv">1.005</div></div>
+      <div class="di"><div class="dl">今日现价</div><div class="dv dn">≈1.001</div></div>
+      <div class="di"><div class="dl">估算涨幅</div><div class="dv up">约+3%</div></div>
+      <div class="di"><div class="dl">持仓成分</div><div class="dv up">AI/芯片/CPO</div></div>
+      <div class="di"><div class="dl">ETF类型</div><div class="dv">科技龙头</div></div>
+    </div>
+
+    <div class="sc-multi">
+      <div class="mt">⏱ 三级别缠论结构分析（3月25日）</div>
+      <div class="time-row">
+        <span class="time-tag">日线</span>
+        <span class="time-content"><span class="rt">日线上涨段</span>——随AI/算力/CPO板块强势，日线从低点启动上涨段。创业板涨2.01%，科技ETF跟涨，日线已突破前期中枢上沿（约0.990），<span class="rt">日线三买形成</span>。</span>
+      </div>
+      <div class="time-row">
+        <span class="time-tag">5分钟</span>
+        <span class="time-content"><span class="rt">5分钟上涨段延续</span>，冲高1.020后回踩至0.990附近，构建5分钟中枢（0.990-1.020）。5分钟二买于回踩后成立，结构完整。</span>
+      </div>
+      <div class="time-row">
+        <span class="time-tag">分时</span>
+        <span class="time-content"><span class="rt">分时强势上涨</span>——高开后上冲，振幅约4%，午后小幅回踩后维持高位，分时走势强劲，收盘守1.000整数关口上方。</span>
+      </div>
+    </div>
+
+    <div class="sc-ana">
+      <div class="at">【缠论综合研判】</div>
+      <p>▸ <span class="hl">走势特征：</span><span class="rt">三级别共振向上</span>——日线上涨段+5分钟上涨中枢+分时强势，是昨日表现最强标的之一。</p>
+      <p>▸ <span class="hl">关键位置：</span>日线支撑0.970（前中枢上沿），5分钟支撑0.990，压力1.020（5分钟中枢上沿），突破后看1.050+。</p>
+      <p>▸ <span class="hl">研判结论：</span><span class="rt">结构最强，做多方向明确</span>。今日(3/26)出现回调至1.000，属正常5分钟回踩，<span class="rt">关注0.990-1.000买点</span>。</p>
+    </div>
+
+    <div class="sc-fund">
+      <div class="ft">📋 消息面支撑</div>
+      ETF持仓含算力、AI芯片、CPO（光电共封装）、半导体等科技龙头成分<br>
+      <strong style="color:var(--red)">Token调用量两年暴增千倍</strong>（国家数据局披露）→ 直接受益<br>
+      <strong style="color:var(--red)">光模块800G→1.6T升级</strong>（深圳政策）→ CPO/光模块成分直接利好<br>
+      <strong style="color:var(--red)">算电协同政策</strong>（绿电占比>80%）→ 算力相关成分受益<br>
+      北向净流入90亿+集中流向科技方向
+    </div>
+
+    <div class="tags">
+      <span class="tag tag-b">三级别共振多⭐</span>
+      <span class="tag tag-b">日线上涨段</span>
+      <span class="tag tag-b">5分钟二买</span>
+      <span class="tag tag-b">AI/算力直接受益</span>
+      <span class="tag tag-a">回踩买点关注</span>
+    </div>
+  </div>
+
+  <!-- ==== 大盘对比（上证+创业板+沪深300） ==== -->
+  <div class="sc">
+    <div class="sc-head">
+      <div>
+        <div class="sc-name">大盘指数对比<span class="sc-badge bpurple">创业板最强⭐</span></div>
+        <div class="sc-code">上证000001 · 沪深300 000300 · 创业板399006</div>
+      </div>
+      <div style="text-align:right">
+        <div class="sc-price" style="color:var(--purple);font-size:18px;">+2.01%</div>
+        <div class="sc-pct wpurple">创业板 领涨</div>
+      </div>
+    </div>
+
+    <div class="sc-chart">
+      <div class="chart-label">创业板指3月25日分时走势（收3316.97，前收3251.60）</div>
+      <div class="chart-wrap">
+        <svg viewBox="0 0 340 140" preserveAspectRatio="none">
+          <!-- 前收3251参考线 -->
+          <line x1="0" y1="100" x2="340" y2="100" stroke="#3a4060" stroke-width="1" stroke-dasharray="3,3"/>
+          <text x="3" y="94" font-size="9" fill="#556080">前收3252</text>
+          <!-- 创业板强势：高开高走，收3317 -->
+          <!-- 前收3252，开3290，最高3330，最低3281，收3317 -->
+          <polyline
+            points="0,88 30,80 60,68 90,50 120,38 150,28 175,22 200,30 225,40 250,38 275,40 300,38 325,36 340,36"
+            fill="none" stroke="var(--purple)" stroke-width="2.5"/>
+          <polygon
+            points="0,88 30,80 60,68 90,50 120,38 150,28 175,22 200,30 225,40 250,38 275,40 300,38 325,36 340,36 340,140 0,140"
+            fill="rgba(204,136,255,.15)"/>
+          <circle cx="0" cy="88" r="4" fill="var(--purple)" opacity=".8"/>
+          <text x="5" y="82" font-size="9" fill="var(--purple)">3290开</text>
+          <circle cx="175" cy="22" r="4" fill="var(--gold)" opacity=".9"/>
+          <text x="180" y="17" font-size="9" fill="var(--gold)">3330高</text>
+          <circle cx="60" cy="110" r="3" fill="var(--green)" opacity=".7"/>
+          <text x="65" y="122" font-size="9" fill="var(--green)">3281低</text>
+          <circle cx="340" cy="36" r="4" fill="var(--purple)"/>
+          <text x="265" y="30" font-size="9" fill="var(--purple)">收3317▲</text>
+        </svg>
+      </div>
+    </div>
+
+    <div class="sc-detail">
+      <div class="di"><div class="dl">上证收盘</div><div class="dv up">3931.84</div></div>
+      <div class="di"><div class="dl">上证涨幅</div><div class="dv up">+1.30%</div></div>
+      <div class="di"><div class="dl">上证成交</div><div class="dv">约1.1万亿</div></div>
+      <div class="di"><div class="dl">沪深300</div><div class="dv up">4537.47</div></div>
+      <div class="di"><div class="dl">300涨幅</div><div class="dv up">+1.40%</div></div>
+      <div class="di"><div class="dl">创业板收盘</div><div class="dv wpurple">3316.97</div></div>
+      <div class="di"><div class="dl">创业板涨幅</div><div class="dv wpurple">+2.01%</div></div>
+      <div class="di"><div class="dl">两市合计</div><div class="dv">2.19万亿</div></div>
+      <div class="di"><div class="dl">北向净流入</div><div class="dv up">+90亿+</div></div>
+    </div>
+
+    <div class="sc-multi">
+      <div class="mt">⏱ 三级别缠论结构分析</div>
+      <div class="time-row">
+        <span class="time-tag">日线</span>
+        <span class="time-content"><span class="rt">三大指数同步日线上涨段</span>——上证重返3900，创业板站上3300。放量突破（2.19万亿）确认日线上涨段的有效性。创业板日线上涨段强于上证，结构更优。</span>
+      </div>
+      <div class="time-row">
+        <span class="time-tag">5分钟</span>
+        <span class="time-content">创业板5分钟<span class="rt">上涨段延续</span>，3290→3330高点后小幅回踩构建5分钟中枢（3300-3330）。5分钟二买形成，结构健康。上证5分钟结构偏弱于创业板。</span>
+      </div>
+      <div class="time-row">
+        <span class="time-tag">分时</span>
+        <span class="time-content"><span class="rt">高开高走，全天强势</span>——创业板分时单边上涨，仅午后小幅回踩，收盘守3300点上方。量能配合良好，分时走势健康无顶背驰。</span>
+      </div>
+    </div>
+
+    <div class="sc-ana">
+      <div class="at">【缠论综合研判】</div>
+      <p>▸ <span class="hl">核心结论：</span><span class="rt">三大指数三级别共振向上</span>，放量突破确认日线上涨段有效。创业板结构最强，科技主线驱动。</p>
+      <p>▸ <span class="hl">关键位置：</span>上证关键支撑3900（整数关口），压力4000；创业板支撑3280-3300，压力3350-3400。</p>
+      <p>▸ <span class="hl">次日展望：</span><span class="wt">今日(3/26)出现小幅回调（上证约-0.1%，创业板+0.75%）</span>，属正常日线上涨段中的5分钟回踩，整体日线结构未破坏。关注创业板3300支撑能否守住。</p>
+    </div>
+
+    <div class="tags">
+      <span class="tag tag-p">三指数共振多⭐</span>
+      <span class="tag tag-b">日线放量突破</span>
+      <span class="tag tag-b">创业板最强</span>
+      <span class="tag tag-n">今日回踩观察</span>
+    </div>
+  </div>
+
+</div><!-- end scards -->
+
+<!-- ===== 操作策略表 ===== -->
+<div class="sec">🎯 缠论操作策略总结表（结合昨日走势展望今日）</div>
+<div class="optable">
+  <div class="ophead"><div class="dot"></div>三标的缠论操作策略 · 基于3月25日收盘结构展望3月26日</div>
+  <table class="ot">
+    <thead>
+      <tr>
+        <th style="min-width:90px">标的</th>
+        <th>3/25收盘</th>
+        <th>三级别共振</th>
+        <th>操作方向</th>
+        <th>今日关键位</th>
+        <th>止损位</th>
+        <th>目标位</th>
+        <th>操作逻辑</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="background:rgba(224,53,53,.04)">
+        <td><strong>科技ETF</strong><br><span style="font-size:10px;color:var(--muted)">515000</span></td>
+        <td class="up">1.005</td>
+        <td><span style="color:var(--red);font-size:11px">日线上↑+5分上↑+分时上↑⭐</span></td>
+        <td><span class="act act-buy">积极做多</span></td>
+        <td>0.990-1.000回踩</td>
+        <td>0.975</td>
+        <td>1.020-1.035</td>
+        <td><strong>三级别共振多，最佳做多标的</strong>。今日回踩0.990-1.000为5分钟买点，止损0.975（中枢下沿），目标1.020突破后看1.035。</td>
+      </tr>
+      <tr>
+        <td><strong>创业板指</strong><br><span style="font-size:10px;color:var(--muted)">399006</span></td>
+        <td class="wpurple">3316.97</td>
+        <td><span style="color:var(--purple);font-size:11px">日线上↑+5分上↑+分时上↑⭐</span></td>
+        <td><span class="act act-buy">积极做多</span></td>
+        <td>3290-3300回踩</td>
+        <td>3270</td>
+        <td>3360-3400</td>
+        <td><strong>三级别共振多，次佳标的</strong>。今日回踩3290-3300为5分钟中枢上沿支撑，止损3270，目标3360。守住3300可持有。</td>
+      </tr>
+      <tr>
+        <td><strong>沪深300</strong><br><span style="font-size:10px;color:var(--muted)">000300</span></td>
+        <td class="up">4537.47</td>
+        <td><span style="color:var(--gold);font-size:11px">日线上↑+5分震荡+分时震荡</span></td>
+        <td><span class="act act-hold">轻仓持有</span></td>
+        <td>4510-4520支撑</td>
+        <td>4480</td>
+        <td>4580-4600</td>
+        <td>两级别共振，可轻仓持有。跌破4510需减仓，守住可等目标4580。</td>
+      </tr>
+      <tr>
+        <td><strong>安迪苏</strong><br><span style="font-size:10px;color:var(--muted)">600299</span></td>
+        <td style="color:var(--gold)">13.72</td>
+        <td><span style="color:var(--gold);font-size:11px">日线震荡+5分钟偏弱+消息利好</span></td>
+        <td><span class="act act-watch">观望</span></td>
+        <td>13.30-13.50支撑</td>
+        <td>13.00</td>
+        <td>14.00-14.50</td>
+        <td><strong>日线中枢震荡，蛋氨酸涨价利好，但短级别偏弱</strong>。今日(3/26)振幅大（13.43-14.13），5分钟二买待确认，等待信号再入。</td>
+      </tr>
+      <tr>
+        <td><strong>中国巨石</strong><br><span style="font-size:10px;color:var(--muted)">600176</span></td>
+        <td class="dn">25.29</td>
+        <td><span style="color:var(--green);font-size:11px">日线震荡+弱势跟涨+板块偏弱</span></td>
+        <td><span class="act act-avoid">回避</span></td>
+        <td>—</td>
+        <td>持仓止损24.55</td>
+        <td>—</td>
+        <td><strong>大盘涨而玻纤板块跌，典型弱势标的</strong>。今日(3/26)继续下跌至25.1附近。坚决不抄底，等待日线底背驰信号出现后再关注。</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ===== 完全分类 ===== -->
+<div class="sec">📋 后续走势完全分类（缠论视角）</div>
+<div class="scenario">
+  <div style="font-size:13px;font-weight:700;margin-bottom:14px;color:var(--text)">基于昨日3月25日强势收盘，后续两种情景预判</div>
+  <div class="scene-grid">
+    <div class="scene-card scene-bull">
+      <div class="scene-title">🔴 情景① · 日线上涨段延续（概率约65%）</div>
+      <p><strong>触发条件：</strong>上证守住3900，创业板守住3280-3300，科技ETF守住0.990，成交额保持2万亿以上。</p>
+      <p><strong>缠论依据：</strong>日线放量突破确认有效，3月25日为一买后的强势延续，不破前收盘即视为日线上涨段健康延续。</p>
+      <p><strong>操作策略：</strong><br>
+      • 科技ETF回踩0.990-1.000积极介入，止损0.975<br>
+      • 创业板回踩3290-3300为5分钟买点，止损3270<br>
+      • 目标：上证3950-4000，创业板3360-3400<br>
+      • 中国巨石/安迪苏继续观望</p>
+    </div>
+    <div class="scene-card scene-bear">
+      <div class="scene-title">🟢 情景② · 日线回踩中枢（概率约35%）</div>
+      <p><strong>触发条件：</strong>上证跌破3880-3900，创业板跌破3260，量能持续萎缩（成交额降至1.5万亿以下），北向转流出。</p>
+      <p><strong>缠论依据：</strong>日线上涨段若不能持续放量，可能形成假突破，回踩至日线中枢区间（上证3750-3880，创业板3150-3270）。</p>
+      <p><strong>操作策略：</strong><br>
+      • 所有标的止损离场，保存资金<br>
+      • 科技ETF跌破0.980→止损<br>
+      • 等待日线回踩中枢后的5分钟一买/二买信号<br>
+      • 中国巨石跌破24.55→持仓坚决止损</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 缠论操作原则 ===== -->
+<div class="sec">今日缠论核心操作原则</div>
+<div class="principle">
+  <div class="p3">
+    <div class="pcard">
+      <div class="pt" style="color:var(--accent)">📐 三级别共振判定汇总</div>
+      • <strong style="color:var(--red)">科技ETF</strong>：日↑+5分↑+分时↑ = <span class="rt">共振多⭐（最优先）</span><br>
+      • <strong style="color:var(--purple)">创业板</strong>：日↑+5分↑+分时↑ = <span class="rt">共振多⭐</span><br>
+      • <strong>沪深300</strong>：日↑+5分震+分时震 = <span class="neu">中性偏多</span><br>
+      • <strong>安迪苏</strong>：日震+5分弱+消息利好 = <span class="neu">级别矛盾，观望</span><br>
+      • <strong style="color:var(--green)">中国巨石</strong>：日震+板块弱 = <span class="gt">回避</span>
+    </div>
+    <div class="pcard">
+      <div class="pt" style="color:var(--cyan)">⚡ 昨日关键背离信号</div>
+      • 大盘普涨+1.3%，玻纤板块跌-0.23%<br>
+      → <strong style="color:var(--warn)">中国巨石资金出逃信号明确</strong><br>
+      • 创业板+2.01%，安迪苏跟涨但低于指数<br>
+      → <strong>安迪苏资金关注度不足</strong><br>
+      • AI/算力/CPO强势，科技ETF与创业板共振<br>
+      → <strong style="color:var(--red)">科技方向主线明确</strong><br>
+      • 北向+90亿，流向科技/成长板块
+    </div>
+    <div class="pcard">
+      <div class="pt" style="color:var(--red)">🛡 分时交易风控原则</div>
+      • 单笔持仓时间：<strong>15-40分钟</strong><br>
+      • 单笔亏损不超账户<strong>1%</strong><br>
+      • 止损触发即执行，不扛单<br>
+      • 14:30后不开新仓<br>
+      • 三级别共振→重仓(60-80%)<br>
+      • 两级别共振→中仓(40%)<br>
+      • 无共振→空仓观望
+    </div>
+  </div>
+</div>
+
+<div class="divider"></div>
+<div class="disclaimer">
+  ⚠️ 本报告为<strong>2026年3月25日昨日复盘分析报告</strong>，基于缠论多级别技术分析框架（日线·5分钟·分时三级别），结合外围市场、消息面与基本面信息综合研判。<br>
+  分时走势示意图为基于当日行情特征的示意性展示，实际价格请以交易软件为准。<br>
+  本报告仅供技术研究参考，<strong>不构成任何投资建议</strong>，投资者需自主决策并承担相应风险。<br>
+  <strong>缠论真谛：你不是多头，也不是空头，只是等待市场自己选择方向。</strong>
+</div>
+
+</body>
+</html>
