@@ -240,19 +240,15 @@ def refresh_symbol(symbol: str, period: str = Query("daily")):
 @app.get("/intraday/{symbol}")
 def get_intraday(symbol: str):
     """获取分时图数据"""
-    import akshare as ak_module
-
     try:
-        code = symbol.replace(".SH", "").replace(".SZ", "")
-
-        # 获取分时数据
-        df = ak_module.stock_zh_a_hist_min_em(symbol=code, period="1", adjust="qfq")
-
+        # 使用collector获取分时数据
+        df = collector.get_tick(symbol)
+        
         if df is not None and len(df) > 0:
             df = df.tail(240)
-            times = df.iloc[:, 0].tolist()
-            prices = [float(x) for x in df.iloc[:, 2].tolist()]
-            volumes = [float(x) for x in df.iloc[:, 5].tolist()]
+            times = df["date"].dt.strftime("%H:%M").tolist()
+            prices = df["close"].tolist()
+            volumes = df["volume"].tolist()
 
             return {
                 "symbol": symbol,
@@ -264,14 +260,6 @@ def get_intraday(symbol: str):
         return {"symbol": symbol, "times": [], "prices": [], "volumes": []}
     except Exception as e:
         logger.warning(f"分时数据失败: {e}")
-        return {"symbol": symbol, "times": [], "prices": [], "volumes": []}
-    except Exception as e:
-        print(f"DEBUG ERROR: {traceback.format_exc()}", flush=True)
-        return {"symbol": symbol, "times": [], "prices": [], "volumes": []}
-    except Exception as e:
-        return {"symbol": symbol, "times": [], "prices": [], "volumes": []}
-    except Exception as e:
-        print(f"[DEBUG] 外部异常: {traceback.format_exc()}")
         return {"symbol": symbol, "times": [], "prices": [], "volumes": []}
 
 
