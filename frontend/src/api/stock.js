@@ -9,13 +9,18 @@ const api = {
   },
 
   // 获取K线数据
-  getKline(symbol, period = 'daily') {
-    return axios.get(`${API_BASE}/kline/${symbol}`, { params: { period } })
+  getKline(symbol, period = 'daily', refresh = 0) {
+    return axios.get(`${API_BASE}/kline/${symbol}`, { params: { period, refresh } })
   },
 
   // 分析股票
-  analyzeStock(symbol, period = 'daily') {
-    return axios.get(`${API_BASE}/analyze/${symbol}`, { params: { period } })
+  analyzeStock(symbol, period = 'daily', refresh = 0) {
+    return axios.get(`${API_BASE}/analyze/${symbol}`, { params: { period, refresh } })
+  },
+
+  // 强制刷新数据
+  refreshSymbol(symbol, period = 'daily') {
+    return axios.post(`${API_BASE}/refresh/${symbol}`, {}, { params: { period } })
   },
 
   // 实时行情

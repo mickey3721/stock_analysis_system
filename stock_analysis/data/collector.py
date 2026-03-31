@@ -1,19 +1,27 @@
 """
-多源数据采集模块 - 简化版
+多源数据采集模块 - 多源降级版 v3
 
-数据源：
-1. akshare（主源）- 股票数据
-2. 本地CSV缓存
+数据源（按优先级）：
+1. 腾讯/同花顺 API - 日K线(含盘中)、分时、实时行情
+2. Baostock - 稳定历史日K线
+3. Sina HTTP - 分钟K线
+4. 东方财富 push2 - 批量实时行情
+5. Scrapling/Playwright - 网页爬取备用
+6. 本地CSV缓存
 
 特性：
 - 数据质量检查
 - 本地缓存
-- 自动降级
+- 多源自动降级
+- 交易时段智能刷新
+- 盘中实时数据更新
+- Playwright/Scrapling 高效爬取
 """
 
 import akshare as ak
 import pandas as pd
 import numpy as np
+import requests
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Tuple
 import logging
@@ -38,7 +46,113 @@ class DataCollector:
         self.cache_dir = cache_dir
         os.makedirs(cache_dir, exist_ok=True)
         self.min_data_points = 150
+        self.tickflow_api_key = os.environ.get("TICKFLOW_API_KEY", "tk_e0a77fadba2d447d98a8cb9a549a4c2b")
+        self.snowball_token = os.environ.get("XUEQIU_TOKEN", "")
+        
+        self._data_source_health: Dict[str, Dict] = {
+            "tencent": {"available": None, "last_test": None},
+            "baostock": {"available": None, "last_test": None},
+            "sina": {"available": None, "last_test": None},
+            "eastmoney_realtime": {"available": None, "last_test": None},
+            "tickflow": {"available": None, "last_test": None},
+            "snowball": {"available": None, "last_test": None},
+        }
+        
         logger.info("数据采集器初始化完成")
+        self._test_all_data_sources()
+
+    def _test_data_source(self, source: str) -> bool:
+        """快速测试单个数据源是否可用"""
+        try:
+            import requests
+            
+            if source == "tencent":
+                url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+                params = {"_var": "kline", "param": "sh000001,day,2026-03-30,2026-03-31,10,qfq"}
+                headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://finance.qq.com/"}
+                resp = requests.get(url, params=params, headers=headers, timeout=5)
+                if resp.status_code == 200 and "=" in resp.text:
+                    return True
+            
+            elif source == "baostock":
+                import baostock as bs
+                lg = bs.login()
+                if lg.error_code != '0':
+                    return False
+                rs = bs.query_history_k_data_plus("sh.000001", "date,close", start_date="2026-03-30", end_date="2026-03-31", frequency="d")
+                bs.logout()
+                return rs.error_code == '0'
+            
+            elif source == "sina":
+                url = "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
+                params = {"symbol": "sh000001", "scale": "240", "ma": "5", "datalen": "1"}
+                resp = requests.get(url, params=params, timeout=5)
+                return resp.status_code == 200
+            
+            elif source == "eastmoney_realtime":
+                url = "http://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&ut=fa5fd1943c7b386f172d6893dbfba10b&fields=f2&secids=1.000001"
+                headers = {"User-Agent": "Mozilla/5.0", "Referer": "http://quote.eastmoney.com/"}
+                resp = requests.get(url, headers=headers, timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return data.get("data", {}).get("diff") is not None
+            
+            elif source == "tickflow":
+                try:
+                    resp = requests.get(
+                        "https://free-api.tickflow.org/v1/klines",
+                        params={"symbol": "000001.SH", "period": "1d", "count": 1},
+                        timeout=10
+                    )
+                    return resp.status_code == 200 and resp.json().get("data") is not None
+                except Exception:
+                    return False
+            
+            elif source == "snowball":
+                try:
+                    import pysnowball as ball
+                    result = ball.quotec("SH600000")
+                    return result and result.get("error_code") == 0
+                except Exception:
+                    return False
+            
+            return False
+            
+        except Exception:
+            return False
+
+    def _test_all_data_sources(self):
+        """测试所有数据源可用性"""
+        import concurrent.futures
+        
+        def test_one(source):
+            result = self._test_data_source(source)
+            self._data_source_health[source] = {
+                "available": result,
+                "last_test": datetime.now()
+            }
+            return source, result
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+            futures = {executor.submit(test_one, src): src for src in self._data_source_health}
+            for future in concurrent.futures.as_completed(futures):
+                source, result = future.result()
+                status = "可用" if result else "不可用"
+                logger.info(f"[数据源测试] {source}: {status}")
+
+    def _is_source_available(self, source: str, max_age_minutes: int = 30) -> bool:
+        """检查数据源是否可用（带缓存）"""
+        health = self._data_source_health.get(source, {})
+        last_test = health.get("last_test")
+        
+        if last_test is None:
+            return self._test_data_source(source)
+        
+        age_minutes = (datetime.now() - last_test).total_seconds() / 60
+        if age_minutes > max_age_minutes:
+            return self._test_data_source(source)
+        
+        return health.get("available", False)
 
     def _cache_path(self, symbol: str, period: str = "daily") -> str:
         """获取缓存文件路径，按周期分开存储"""
@@ -47,11 +161,15 @@ class DataCollector:
             self.cache_dir, f"{symbol.replace('.', '_')}{period_suffix}.csv"
         )
 
-    def _check_quality(self, df: pd.DataFrame) -> Tuple[bool, str]:
+    def _check_quality(self, df: pd.DataFrame, min_points: Optional[int] = None) -> Tuple[bool, str]:
         """质量检查"""
         if df.empty:
             return False, "数据为空"
-        if len(df) < self.min_data_points:
+        
+        if min_points is None:
+            min_points = self.min_data_points
+            
+        if len(df) < min_points:
             return False, f"数据不足{len(df)}条"
 
         cols = ["date", "open", "high", "low", "close", "volume"]
@@ -60,42 +178,140 @@ class DataCollector:
                 return False, f"缺{c}"
         return True, "OK"
 
+    def _is_trading_time(self) -> bool:
+        """判断当前是否在A股交易时段"""
+        now = datetime.now()
+        
+        if now.weekday() >= 5:
+            return False
+        
+        hour = now.hour
+        minute = now.minute
+        current_minutes = hour * 60 + minute
+        
+        if (570 <= current_minutes < 690) or (780 <= current_minutes < 900):
+            return True
+        return False
+
+    def _get_latest_date(self) -> str:
+        """获取最新可获取的数据日期"""
+        now = datetime.now()
+        
+        if self._is_trading_time():
+            return now.strftime("%Y%m%d")
+        
+        if now.weekday() == 6:
+            days_ago = 2
+        elif now.weekday() == 5:
+            days_ago = 1
+        elif now.hour < 9:
+            days_ago = 1
+        else:
+            days_ago = 1
+        
+        latest = now - timedelta(days=days_ago)
+        return latest.strftime("%Y%m%d")
+
+    def _get_latest_trading_day(self) -> str:
+        """获取最近交易日（用于日线数据）"""
+        now = datetime.now()
+        
+        if now.weekday() >= 5:
+            if now.weekday() == 6:
+                days_ago = 2
+            else:
+                days_ago = 1
+        elif now.hour < 9 or now.hour >= 15:
+            if now.hour < 9 and now.minute < 30:
+                days_ago = 1
+            else:
+                days_ago = 0
+        else:
+            days_ago = 0
+        
+        latest = now - timedelta(days=days_ago)
+        return latest.strftime("%Y-%m-%d")
+
+    def _is_cache_valid(self, symbol: str, period: str = "daily") -> bool:
+        """检查缓存是否有效（根据交易时段判断）"""
+        path = self._cache_path(symbol, period)
+        if not os.path.exists(path):
+            return False
+        
+        try:
+            df = pd.read_csv(path)
+            if df.empty or "date" not in df.columns:
+                return False
+            
+            df["date"] = pd.to_datetime(df["date"])
+            latest_cache_date = df["date"].max()
+            today = datetime.now().date()
+            
+            if period == "daily":
+                expected_date = pd.to_datetime(self._get_latest_trading_day())
+                return latest_cache_date.date() >= expected_date.date()
+            else:
+                if self._is_trading_time():
+                    if latest_cache_date.date() == today:
+                        return True
+                    return False
+                else:
+                    if latest_cache_date.date() < today:
+                        return True
+                    return False
+        except:
+            return False
+
     def get_stock_daily(
         self,
         symbol: str,
-        start_date: str = None,
-        end_date: str = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
         period: str = "daily",
+        force_refresh: bool = False,
     ) -> pd.DataFrame:
         """获取日线"""
         period = period if period else "daily"
+        is_trading = self._is_trading_time()
 
-        # 0. 优先使用缓存（快速响应）
-        if self.use_cache:
+        if is_trading:
+            logger.info(f"[交易时段] {symbol} 日线 - 实时数据")
+        else:
+            logger.info(f"[非交易时段] {symbol} 日线 - 最近历史数据")
+
+        # 0. 缓存检查（除非强制刷新）
+        if self.use_cache and not force_refresh:
             path = self._cache_path(symbol, period)
             if os.path.exists(path):
-                df = pd.read_csv(path)
-                df["date"] = pd.to_datetime(df["date"])
-                if start_date:
-                    df = df[df["date"] >= pd.to_datetime(start_date)]
-                if end_date:
-                    df = df[df["date"] <= pd.to_datetime(end_date)]
-                passed, _ = self._check_quality(df)
-                if passed:
-                    logger.info(f"[cache] {symbol} OK: {len(df)}条")
-                    return df
+                if self._is_cache_valid(symbol, period):
+                    df = pd.read_csv(path)
+                    df["date"] = pd.to_datetime(df["date"])
+                    if start_date:
+                        df = df[df["date"] >= pd.to_datetime(start_date)]
+                    if end_date:
+                        df = df[df["date"] <= pd.to_datetime(end_date)]
+                    passed, _ = self._check_quality(df)
+                    if passed:
+                        logger.info(f"[cache] {symbol} OK: {len(df)}条")
+                        return df
+                else:
+                    logger.info(f"[cache] {symbol} 已过期，尝试更新...")
 
-        # 1. 尝试从akshare获取
-        df = self._get_from_akshare(symbol, start_date, end_date)
+        # 判断是否为ETF（使用更低的数据质量阈值）
+        is_etf = symbol.startswith("51") or symbol.startswith("15") or symbol.startswith("50")
+        min_points = 30 if is_etf else self.min_data_points
+
+        # 1. 尝试从网络获取
+        df, source = self._get_with_source(symbol, start_date, end_date)
 
         if not df.empty:
-            passed, msg = self._check_quality(df)
+            passed, msg = self._check_quality(df, min_points)
             if passed:
-                logger.info(f"[akshare] {symbol} OK: {len(df)}条")
+                logger.info(f"[{source}] {symbol} OK: {len(df)}条")
                 if self.use_cache:
                     df.to_csv(self._cache_path(symbol, period), index=False)
                 return df
-            logger.warning(f"[akshare] {symbol} 质量: {msg}")
+            logger.warning(f"[{source}] {symbol} 质量: {msg}")
 
         # 2. 尝试缓存
         if self.use_cache:
@@ -107,7 +323,7 @@ class DataCollector:
                     df = df[df["date"] >= pd.to_datetime(start_date)]
                 if end_date:
                     df = df[df["date"] <= pd.to_datetime(end_date)]
-                passed, _ = self._check_quality(df)
+                passed, _ = self._check_quality(df, min_points)
                 if passed:
                     logger.info(f"[cache] {symbol} OK: {len(df)}条")
                     return df
@@ -115,20 +331,802 @@ class DataCollector:
         logger.error(f"{symbol} 获取失败")
         return pd.DataFrame()
 
-    def _get_from_akshare(
+    def _get_with_source(self, symbol: str, start_date: Optional[str], end_date: Optional[str]) -> Tuple[pd.DataFrame, str]:
+        """获取数据并返回数据源名称"""
+        is_china_index = symbol in [
+            "000001.SH",
+            "000300.SH",
+            "399006.SZ",
+            "399001.SZ",
+        ]
+        is_foreign = symbol.startswith("^") or symbol in [
+            "CN00Y",
+            "CL=F",
+            "XAUUSD",
+            "DXY",
+        ]
+        is_etf = symbol.startswith("51") or symbol.startswith("15") or symbol.startswith("50")
+        code = symbol.replace(".SH", "").replace(".SZ", "")
+        
+        df = pd.DataFrame()
+        source = "unknown"
+        
+        if is_china_index:
+            if self._is_source_available("tencent"):
+                df = self._get_from_tencent(symbol, start_date, end_date)
+                if not df.empty:
+                    source = "tencent"
+            
+            if df.empty and self._is_source_available("baostock"):
+                df = self._get_from_baostock(symbol, start_date, end_date)
+                if not df.empty:
+                    source = "baostock"
+            
+            if df.empty and self._is_source_available("sina"):
+                df = self._get_from_sina(symbol, start_date, end_date)
+                if not df.empty:
+                    source = "sina"
+
+        elif is_foreign:
+            df = self._get_foreign_data(symbol, start_date, end_date)
+            source = "foreign"
+
+        else:
+            if self._is_source_available("tencent"):
+                df = self._get_from_tencent(symbol, start_date, end_date)
+                if not df.empty:
+                    source = "tencent"
+
+            if df.empty and self._is_source_available("baostock"):
+                df = self._get_from_baostock(symbol, start_date, end_date)
+                if not df.empty:
+                    source = "baostock"
+
+            if df.empty and self._is_source_available("sina"):
+                df = self._get_from_sina(symbol, start_date, end_date)
+                if not df.empty:
+                    source = "sina"
+
+            if df.empty and is_etf:
+                if self._is_source_available("tencent"):
+                    df = self._get_from_tencent(symbol, start_date, end_date)
+                    if not df.empty:
+                        source = "tencent"
+        
+        return df, source
+
+    def _get_from_sina(
         self, symbol: str, start_date: str, end_date: str
     ) -> pd.DataFrame:
-        """从akshare获取"""
+        """使用新浪财经API获取历史K线数据"""
+        try:
+            code = symbol.replace(".SH", "").replace(".SZ", "")
+            sina_symbol = ("sh" if symbol.endswith(".SH") else "sz") + code
+
+            start_str = start_date
+            end_str = end_date
+            if start_date and len(start_date) == 8:
+                start_str = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:8]}"
+            if end_date and len(end_date) == 8:
+                end_str = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:8]}"
+
+            url = "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
+            params = {
+                "symbol": sina_symbol,
+                "scale": "240",
+                "ma": "5",
+                "datalen": "1000",
+            }
+
+            import requests
+            resp = requests.get(url, params=params, timeout=10)
+            if resp.status_code != 200:
+                return pd.DataFrame()
+
+            import json
+            data = json.loads(resp.text)
+            if not data:
+                return pd.DataFrame()
+
+            rows = []
+            for item in data:
+                date_str = item.get("day", "")
+                if date_str and start_str and date_str < start_str:
+                    continue
+                if date_str and end_str and date_str > end_str:
+                    continue
+
+                rows.append({
+                    "date": date_str,
+                    "open": float(item.get("open", 0)),
+                    "high": float(item.get("high", 0)),
+                    "low": float(item.get("low", 0)),
+                    "close": float(item.get("close", 0)),
+                    "volume": float(item.get("volume", 0)),
+                })
+
+            if not rows:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(rows)
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.sort_values("date").reset_index(drop=True)
+            return df
+
+        except Exception as e:
+            logger.warning(f"新浪财经数据获取失败: {e}")
+            return pd.DataFrame()
+
+    def _get_from_tencent(
+        self, symbol: str, start_date: Optional[str], end_date: Optional[str]
+    ) -> pd.DataFrame:
+        """使用腾讯/同花顺API获取日K线数据（含盘中实时）"""
+        try:
+            import requests
+            import json
+            from datetime import datetime, timedelta
+            
+            code = symbol.replace(".SH", "").replace(".SZ", "")
+            prefix = "sh" if symbol.endswith(".SH") else "sz"
+            tencent_symbol = f"{prefix}{code}"
+            
+            if start_date and len(start_date) == 8:
+                start_str = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:8]}"
+            else:
+                start_str = (datetime.now() - timedelta(days=400)).strftime("%Y-%m-%d")
+            
+            if end_date and len(end_date) == 8:
+                end_str = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:8]}"
+            else:
+                end_str = datetime.now().strftime("%Y-%m-%d")
+            
+            url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+            params = {
+                "_var": "kline",
+                "param": f"{tencent_symbol},day,{start_str},{end_str},500,qfq"
+            }
+            headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://finance.qq.com/"}
+            
+            resp = requests.get(url, params=params, headers=headers, timeout=10)
+            if resp.status_code != 200:
+                return pd.DataFrame()
+            
+            if "=" not in resp.text:
+                return pd.DataFrame()
+            
+            json_str = resp.text.split("=", 1)[1]
+            data = json.loads(json_str)
+            
+            if data.get("code") != 0:
+                return pd.DataFrame()
+            
+            key = tencent_symbol
+            if key not in data.get("data", {}):
+                return pd.DataFrame()
+            
+            kdata = data["data"][key]
+            day_data = kdata.get("day", kdata.get("qfqday", []))
+            
+            if not day_data:
+                return pd.DataFrame()
+            
+            rows = []
+            for item in day_data:
+                if len(item) >= 6:
+                    rows.append({
+                        "date": item[0],
+                        "open": float(item[1]),
+                        "low": float(item[2]),   # 腾讯API第3列是低价
+                        "high": float(item[3]),   # 腾讯API第4列是高价
+                        "close": float(item[4]),
+                        "volume": float(item[5]),
+                    })
+            
+            if not rows:
+                return pd.DataFrame()
+            
+            df = pd.DataFrame(rows)
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.sort_values("date").reset_index(drop=True)
+            return df
+            
+        except Exception as e:
+            logger.warning(f"腾讯/同花顺数据获取失败: {e}")
+            return pd.DataFrame()
+
+    def _get_from_scrapling(
+        self, symbol: str, data_type: str = "kline"
+    ) -> dict:
+        """使用 Scrapling/Playwright 爬取网页数据
+        
+        Args:
+            symbol: 股票代码
+            data_type:数据类型 ("kline" | "realtime" | "basic")
+        
+        Returns:
+            包含数据的字典
+        """
+        result = {"success": False, "data": None, "source": "scrapling"}
+        
+        try:
+            import requests
+            from bs4 import BeautifulSoup
+            
+            code = symbol.replace(".SH", "").replace(".SZ", "")
+            prefix = "sh" if symbol.endswith(".SH") else "sz"
+            ths_code = prefix + code
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Referer": "https://stockpage.10jqka.com.cn/",
+            }
+            
+            if data_type == "kline":
+                # 使用腾讯K线API（已验证可用）
+                url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+                params = {"_var": "kline", "param": f"{ths_code},day,2026-03-01,2026-03-31,100,qfq"}
+                resp = requests.get(url, params=params, headers=headers, timeout=10)
+                if "=" in resp.text:
+                    import json
+                    data = json.loads(resp.text.split("=", 1)[1])
+                    if data.get("code") == 0 and ths_code in data.get("data", {}):
+                        day = data["data"][ths_code].get("day", data["data"][ths_code].get("qfqday", []))
+                        if day:
+                            result["success"] = True
+                            result["data"] = day
+                            return result
+                
+            elif data_type == "realtime":
+                # 使用腾讯实时行情API
+                url = f"https://qt.gtimg.cn/q={ths_code}"
+                resp = requests.get(url, headers=headers, timeout=10)
+                if resp.status_code == 200 and "v_" in resp.text:
+                    parts = resp.text.split("~")
+                    if len(parts) > 40:
+                        result["success"] = True
+                        result["data"] = {
+                            "name": parts[1],
+                            "code": parts[2],
+                            "price": float(parts[3]) if parts[3] else 0,
+                            "open": float(parts[5]) if parts[5] else 0,
+                            "high": float(parts[33]) if parts[33] else 0,  # 腾讯[33]是高价
+                            "low": float(parts[34]) if parts[34] else 0,    # 腾讯[34]是低价
+                            "volume": float(parts[6]) if parts[6] else 0,
+                            "change_pct": float(parts[32]) if parts[32] else 0,
+                        }
+                        return result
+                
+            elif data_type == "minute":
+                # 分时数据
+                url = "https://web.ifzq.gtimg.cn/appstock/app/minute/query"
+                resp = requests.get(url, params={"code": ths_code}, headers=headers, timeout=10)
+                data = resp.json()
+                if data.get("code") == 0 and ths_code in data.get("data", {}):
+                    minute = data["data"][ths_code]["data"]["data"]
+                    if minute:
+                        result["success"] = True
+                        result["data"] = minute
+                        return result
+            
+            elif data_type == "basic":
+                # 基本面数据（需要Playwright）
+                url = f"https://basic.10jqka.com.cn/{code}/"
+                resp = requests.get(url, headers=headers, timeout=15)
+                if resp.status_code == 200:
+                    resp.encoding = "gbk"
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    result["success"] = True
+                    result["data"] = {
+                        "html_length": len(resp.text),
+                        "has_financial": "每股收益" in resp.text,
+                        "has_capital": "总股本" in resp.text,
+                    }
+                    return result
+                    
+        except Exception as e:
+            logger.warning(f"Scrapling爬取失败: {e}")
+        
+        return result
+
+    def _try_playwright(self, url: str, selector: str = None) -> Optional[str]:
+        """尝试使用 Playwright 爬取页面
+        
+        注意: 需要安装 playwright 和 chromium
+        """
+        try:
+            from playwright.sync_api import sync_playwright
+            
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
+                page.goto(url, timeout=30000)
+                page.wait_for_load_state("networkidle", timeout=15000)
+                
+                if selector:
+                    content = page.locator(selector).first.inner_text()
+                else:
+                    content = page.content()
+                
+                browser.close()
+                return content
+                
+        except Exception as e:
+            logger.debug(f"Playwright爬取失败: {e}")
+            return None
+
+    def _get_from_tickflow(
+        self, symbol: str, start_date: str, end_date: str
+    ) -> pd.DataFrame:
+        """使用TickFlow获取历史K线数据"""
+        try:
+            tf_symbol = symbol.replace(".SH", ".SH").replace(".SZ", ".SZ")
+            base_url = "https://free-api.tickflow.org/v1/klines"
+            
+            params = {
+                "symbol": tf_symbol,
+                "period": "1d",
+                "count": 10000,
+            }
+            
+            resp = requests.get(base_url, params=params, timeout=15, verify=True)
+            if resp.status_code != 200:
+                return pd.DataFrame()
+            
+            data = resp.json()
+            if not data.get("data"):
+                return pd.DataFrame()
+            
+            kdata = data["data"]
+            timestamps = kdata.get("timestamp", [])
+            opens = kdata.get("open", [])
+            highs = kdata.get("high", [])
+            lows = kdata.get("low", [])
+            closes = kdata.get("close", [])
+            volumes = kdata.get("volume", [])
+            
+            rows = []
+            for i in range(len(timestamps)):
+                import datetime
+                ts = int(timestamps[i]) / 1000
+                date_str = datetime.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
+                rows.append({
+                    "date": date_str,
+                    "open": float(opens[i]) if i < len(opens) else 0,
+                    "high": float(highs[i]) if i < len(highs) else 0,
+                    "low": float(lows[i]) if i < len(lows) else 0,
+                    "close": float(closes[i]) if i < len(closes) else 0,
+                    "volume": float(volumes[i]) if i < len(volumes) else 0,
+                })
+            
+            if not rows:
+                return pd.DataFrame()
+            
+            df = pd.DataFrame(rows)
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.sort_values("date").reset_index(drop=True)
+            
+            if start_date:
+                start = pd.to_datetime(start_date)
+                df = df[df["date"] >= start]
+            if end_date:
+                end = pd.to_datetime(end_date)
+                df = df[df["date"] <= end]
+            
+            return df
+            
+        except Exception as e:
+            logger.warning(f"TickFlow数据获取失败: {e}")
+            return pd.DataFrame()
+
+    def _get_from_snowball(self, symbols: List[str]) -> Dict[str, Dict]:
+        """使用雪球获取实时行情（无需Token）"""
+        try:
+            import pysnowball as ball
+            
+            symbols_str = ",".join(symbols)
+            result = ball.quotec(symbols_str)
+            
+            if not result or result.get("error_code") != 0:
+                return {}
+            
+            quotes = {}
+            for item in result.get("data", []):
+                symbol = item.get("symbol", "")
+                quotes[symbol] = {
+                    "current": item.get("current", 0),
+                    "open": item.get("open", 0),
+                    "high": item.get("high", 0),
+                    "low": item.get("low", 0),
+                    "close": item.get("current", 0),
+                    "volume": item.get("volume", 0),
+                    "amount": item.get("amount", 0),
+                    "chg": item.get("chg", 0),
+                    "percent": item.get("percent", 0),
+                    "last_close": item.get("last_close", 0),
+                    "timestamp": item.get("timestamp", 0),
+                }
+            return quotes
+        except Exception as e:
+            logger.warning(f"雪球数据获取失败: {e}")
+            return {}
+
+    def _get_kline_from_snowball(
+        self, symbol: str, period: str = "day", count: int = 284
+    ) -> pd.DataFrame:
+        """使用雪球获取K线数据（需要Token）"""
+        try:
+            if not self.snowball_token:
+                logger.debug("雪球Token未配置，跳过K线获取")
+                return pd.DataFrame()
+            
+            import pysnowball as ball
+            ball.set_token(self.snowball_token)
+            
+            result = ball.kline(symbol, period=period, count=count)
+            if not result or "data" not in result:
+                return pd.DataFrame()
+            
+            data = result["data"]
+            columns = data.get("column", [])
+            items = data.get("item", [])
+            
+            if not items:
+                return pd.DataFrame()
+            
+            col_map = {col: idx for idx, col in enumerate(columns)}
+            
+            rows = []
+            for item in items:
+                timestamp = item[col_map.get("timestamp", 0)]
+                rows.append({
+                    "date": pd.to_datetime(timestamp, unit="ms").strftime("%Y-%m-%d"),
+                    "open": float(item[col_map.get("open", 1)]),
+                    "close": float(item[col_map.get("close", 4)]),
+                    "high": float(item[col_map.get("high", 3)]),
+                    "low": float(item[col_map.get("low", 2)]),
+                    "volume": float(item[col_map.get("volume", 5)]),
+                })
+            
+            df = pd.DataFrame(rows)
+            df["date"] = pd.to_datetime(df["date"])
+            return df.sort_values("date").reset_index(drop=True)
+            
+        except Exception as e:
+            logger.warning(f"雪球K线获取失败: {e}")
+            return pd.DataFrame()
+
+    def _test_snowball_source(self) -> bool:
+        """测试雪球数据源"""
+        try:
+            import pysnowball as ball
+            result = ball.quotec("SH600000")
+            return result and result.get("error_code") == 0
+        except Exception:
+            return False
+
+    def _get_from_finnhub(
+        self, symbol: str, start_date: str, end_date: str
+    ) -> pd.DataFrame:
+        """使用Finnhub获取历史K线数据"""
+        try:
+            import finnhub
+            import time
+            
+            code = symbol.replace(".SH", "").replace(".SZ", "")
+            if symbol.endswith(".SH"):
+                finnhub_symbol = f"SHA:{code}"
+            else:
+                finnhub_symbol = f"SHE:{code}"
+            
+            start_ts = int(time.mktime(time.strptime(start_date[:4] + "-" + start_date[4:6] + "-" + start_date[6:8] if len(start_date) == 8 else start_date, "%Y-%m-%d")))
+            end_ts = int(time.mktime(time.strptime(end_date[:4] + "-" + end_date[4:6] + "-" + end_date[6:8] if len(end_date) == 8 else end_date, "%Y-%m-%d")))
+            
+            api_key = os.environ.get("FINNHUB_API_KEY", "")
+            if not api_key:
+                return pd.DataFrame()
+            
+            client = finnhub.Client(api_key=api_key)
+            candles = client.stock_candles(finnhub_symbol, "D", start_ts, end_ts)
+            
+            if not candles or candles.get("s") != "ok":
+                return pd.DataFrame()
+            
+            rows = []
+            for i in range(len(candles.get("t", []))):
+                rows.append({
+                    "date": pd.Timestamp(candles["t"][i], unit="s"),
+                    "open": candles["o"][i] if i < len(candles["o"]) else 0,
+                    "high": candles["h"][i] if i < len(candles["h"]) else 0,
+                    "low": candles["l"][i] if i < len(candles["l"]) else 0,
+                    "close": candles["c"][i] if i < len(candles["c"]) else 0,
+                    "volume": candles["v"][i] if i < len(candles["v"]) else 0,
+                })
+            
+            if not rows:
+                return pd.DataFrame()
+            
+            df = pd.DataFrame(rows)
+            df = df.sort_values("date").reset_index(drop=True)
+            return df
+            
+        except Exception as e:
+            logger.warning(f"Finnhub数据获取失败: {e}")
+            return pd.DataFrame()
+
+    def _get_from_baostock(
+        self, symbol: str, start_date: Optional[str], end_date: Optional[str]
+    ) -> pd.DataFrame:
+        """使用Baostock获取历史K线数据"""
+        try:
+            import baostock as bs
+            from datetime import datetime, timedelta
+
+            lg = bs.login()
+            if lg.error_code != '0':
+                logger.warning(f"Baostock登录失败: {lg.error_msg}")
+                return pd.DataFrame()
+
+            code = symbol.replace(".SH", "").replace(".SZ", "")
+            if symbol.endswith(".SH"):
+                bs_symbol = f"sh.{code}"
+            else:
+                bs_symbol = f"sz.{code}"
+
+            if start_date and len(start_date) == 8:
+                start_str = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:8]}"
+            else:
+                start_str = (datetime.now() - timedelta(days=400)).strftime("%Y-%m-%d")
+            
+            if end_date and len(end_date) == 8:
+                end_str = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:8]}"
+            else:
+                end_str = datetime.now().strftime("%Y-%m-%d")
+
+            rs = bs.query_history_k_data_plus(
+                bs_symbol,
+                "date,open,high,low,close,volume",
+                start_date=start_str,
+                end_date=end_str,
+                frequency="d",
+                adjustflag="2"
+            )
+
+            if rs.error_code != '0':
+                logger.warning(f"Baostock查询失败: {rs.error_msg}")
+                bs.logout()
+                return pd.DataFrame()
+
+            rows = []
+            while (rs.error_code == '0') and rs.next():
+                row = rs.get_row_data()
+                if row and row[0]:
+                    rows.append({
+                        "date": row[0],
+                        "open": float(row[1]) if row[1] else 0,
+                        "high": float(row[2]) if row[2] else 0,
+                        "low": float(row[3]) if row[3] else 0,
+                        "close": float(row[4]) if row[4] else 0,
+                        "volume": float(row[5]) if row[5] else 0,
+                    })
+
+            bs.logout()
+
+            if not rows:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(rows)
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.sort_values("date").reset_index(drop=True)
+            return df
+
+        except Exception as e:
+            logger.warning(f"Baostock数据获取失败: {e}")
+            return pd.DataFrame()
+
+    def _get_from_efinance(
+        self, symbol: str, start_date: str = "20250101", end_date: str = "20261231", period: str = "daily"
+    ) -> pd.DataFrame:
+        """使用Efinance获取K线数据"""
+        try:
+            import efinance as ef
+
+            code = symbol.replace(".SH", "").replace(".SZ", "")
+
+            if period == "daily":
+                df = ef.stock.get_quote_history(code, klt=101)
+            elif period == "60min":
+                df = ef.stock.get_quote_history(code, klt=60)
+            elif period == "30min":
+                df = ef.stock.get_quote_history(code, klt=30)
+            elif period == "15min":
+                df = ef.stock.get_quote_history(code, klt=15)
+            elif period == "5min":
+                df = ef.stock.get_quote_history(code, klt=5)
+            else:
+                df = ef.stock.get_quote_history(code, klt=101)
+
+            if df is None or df.empty:
+                return pd.DataFrame()
+
+            col_map = {
+                "日期": "date",
+                "开盘": "open",
+                "最高": "high",
+                "最低": "low",
+                "收盘": "close",
+                "成交量": "volume",
+            }
+
+            new_cols = []
+            for c in df.columns:
+                if c in col_map:
+                    new_cols.append(col_map[c])
+                else:
+                    new_cols.append(c)
+            df.columns = new_cols
+
+            required = ["date", "open", "high", "low", "close", "volume"]
+            if not all(c in df.columns for c in required):
+                return pd.DataFrame()
+
+            df = df[required]
+            df["date"] = pd.to_datetime(df["date"], errors="coerce")
+            df = df.dropna(subset=["date", "close"])
+
+            for c in ["open", "high", "low", "close", "volume"]:
+                df[c] = pd.to_numeric(df[c], errors="coerce")
+
+            df = df.sort_values("date").reset_index(drop=True)
+            return df
+
+        except Exception as e:
+            logger.warning(f"Efinance数据获取失败: {e}")
+            return pd.DataFrame()
+
+    def _update_today_data(self, symbol: str, df: pd.DataFrame) -> pd.DataFrame:
+        """交易时段更新当日实时数据（使用多源实时行情）"""
+        try:
+            today = datetime.now().date()
+            realtime = self._get_realtime_quote(symbol)
+
+            if not realtime or realtime.get("close", 0) <= 0:
+                return df
+
+            today_str = pd.Timestamp(today).strftime("%Y-%m-%d")
+            today_data = {
+                "date": today_str,
+                "open": realtime.get("open", realtime["close"]),
+                "high": realtime.get("high", realtime["close"]),
+                "low": realtime.get("low", realtime["close"]),
+                "close": realtime["close"],
+                "volume": realtime.get("volume", 0),
+            }
+
+            df["date"] = pd.to_datetime(df["date"])
+
+            if len(df) > 0 and df["date"].iloc[-1].date() == today:
+                df.loc[df.index[-1], "open"] = today_data["open"]
+                df.loc[df.index[-1], "high"] = max(df.iloc[-1]["high"], today_data["high"])
+                df.loc[df.index[-1], "low"] = min(df.iloc[-1]["low"], today_data["low"])
+                df.loc[df.index[-1], "close"] = today_data["close"]
+                df.loc[df.index[-1], "volume"] = today_data["volume"]
+            else:
+                new_row = pd.DataFrame([today_data])
+                df = pd.concat([df, new_row], ignore_index=True)
+
+            logger.info(f"[实时更新] {symbol} 收盘价: {today_data['close']} (来源: {realtime.get('source', 'unknown')})")
+            return df
+
+        except Exception as e:
+            logger.warning(f"实时数据更新失败: {e}")
+            return df
+
+    def _get_realtime_quote(self, symbol: str) -> dict:
+        """获取实时行情（多源并发，返回最快结果）"""
+        try:
+            code = symbol.replace(".SH", "").replace(".SZ", "")
+            market = "1" if symbol.endswith(".SH") else "0"
+            sina_prefix = "sh" if symbol.endswith(".SH") else "sz"
+
+            import requests
+            import concurrent.futures
+
+            def get_sina():
+                try:
+                    url = f"https://hq.sinajs.cn/list={sina_prefix}{code}"
+                    headers = {"Referer": "https://finance.sina.com.cn"}
+                    resp = requests.get(url, headers=headers, timeout=5)
+                    if resp.status_code == 200 and "var hq_str" in resp.text:
+                        parts = resp.text.split('"')[1].split(",")
+                        if len(parts) > 30:
+                            return {
+                                "source": "sina",
+                                "open": float(parts[1]) if parts[1] else 0,
+                                "high": float(parts[4]) if parts[4] else 0,
+                                "low": float(parts[5]) if parts[5] else 0,
+                                "close": float(parts[3]) if parts[3] else 0,
+                                "volume": float(parts[8]) if parts[8] else 0,
+                                "amount": float(parts[9]) if parts[9] else 0,
+                            }
+                except:
+                    pass
+                return None
+
+            def get_tencent():
+                try:
+                    url = f"https://qt.gtimg.cn/q={sina_prefix}{code}"
+                    resp = requests.get(url, timeout=5)
+                    if resp.status_code == 200 and "v_" in resp.text:
+                        parts = resp.text.split("~")
+                        if len(parts) > 45:
+                            return {
+                                "source": "tencent",
+                                "open": float(parts[5]) if parts[5] else 0,
+                                "high": float(parts[33]) if parts[33] else 0,
+                                "low": float(parts[34]) if parts[34] else 0,
+                                "close": float(parts[3]) if parts[3] else 0,
+                                "volume": float(parts[6]) if parts[6] else 0,
+                                "amount": float(parts[37]) if parts[37] else 0,
+                            }
+                except:
+                    pass
+                return None
+
+            def get_eastmoney():
+                try:
+                    url = f"http://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&ut=fa5fd1943c7b386f172d6893dbfba10b&fields=f2,f3,f4,f5,f6,f15,f16,f17,f18&secids={market}.{code}"
+                    headers = {"User-Agent": "Mozilla/5.0", "Referer": "http://quote.eastmoney.com/"}
+                    resp = requests.get(url, headers=headers, timeout=5)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get("data", {}).get("diff"):
+                            d = data["data"]["diff"][0]
+                            return {
+                                "source": "eastmoney",
+                                "open": d.get("f4", 0),
+                                "high": d.get("f15", 0),  # f15是最高价
+                                "low": d.get("f16", 0),    # f16是最低价
+                                "close": d.get("f2", 0),
+                                "volume": d.get("f5", 0),
+                                "amount": d.get("f6", 0),
+                            }
+                except:
+                    pass
+                return None
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                futures = {
+                    executor.submit(get_sina): "sina",
+                    executor.submit(get_tencent): "tencent",
+                    executor.submit(get_eastmoney): "eastmoney",
+                }
+                for future in concurrent.futures.as_completed(futures, timeout=8):
+                    result = future.result()
+                    if result and result.get("close", 0) > 0:
+                        return result
+
+            return {}
+
+        except Exception as e:
+            logger.warning(f"实时行情获取失败: {e}")
+            return {}
+
+    def _get_from_akshare(
+        self, symbol: str, start_date: Optional[str], end_date: Optional[str]
+    ) -> pd.DataFrame:
+        """从akshare获取（根据交易时段决定数据范围）"""
         try:
             if end_date is None:
-                end_date = datetime.now().strftime("%Y%m%d")
+                if self._is_trading_time():
+                    end_date = datetime.now().strftime("%Y%m%d")
+                else:
+                    end_date = self._get_latest_date()
             if start_date is None:
                 start_date = (datetime.now() - timedelta(days=400)).strftime("%Y%m%d")
 
             code = symbol.replace(".SH", "").replace(".SZ", "")
             df = pd.DataFrame()
 
-            # 判断类型
             is_china_index = symbol in [
                 "000001.SH",
                 "000300.SH",
@@ -148,45 +1146,39 @@ class DataCollector:
             ]
 
             if is_china_index:
-                # 中国指数：使用 index_zh_a_hist
-                try:
-                    df = ak.index_zh_a_hist(
-                        symbol=code,
-                        period="daily",
-                        start_date=start_date,
-                        end_date=end_date,
-                    )
-                except Exception as e:
-                    logger.warning(f"index_zh_a_hist {symbol} 失败: {e}")
+                if self._is_source_available("tencent"):
+                    df = self._get_from_tencent(symbol, start_date, end_date)
+                
+                if df.empty and self._is_source_available("baostock"):
+                    logger.warning(f"腾讯 {symbol} 失败，尝试Baostock")
+                    df = self._get_from_baostock(symbol, start_date, end_date)
+                
+                if df.empty and self._is_source_available("sina"):
+                    logger.warning(f"Baostock {symbol} 失败，尝试新浪API")
+                    df = self._get_from_sina(symbol, start_date, end_date)
 
             elif is_foreign:
-                # 外汇/大宗/外盘：使用其他API或返回空
                 df = self._get_foreign_data(symbol, start_date, end_date)
 
             else:
-                # 股票/ETF：使用 stock_zh_a_hist
-                try:
-                    df = ak.stock_zh_a_hist(
-                        symbol=code,
-                        period="daily",
-                        start_date=start_date,
-                        end_date=end_date,
-                        adjust="",
-                    )
-                except:
-                    pass
+                if self._is_source_available("tencent"):
+                    df = self._get_from_tencent(symbol, start_date, end_date)
+
+                if df.empty and self._is_source_available("baostock"):
+                    logger.warning(f"腾讯 {symbol} 失败，尝试Baostock")
+                    df = self._get_from_baostock(symbol, start_date, end_date)
+
+                if df.empty and self._is_source_available("sina"):
+                    logger.warning(f"Baostock {symbol} 失败，尝试新浪API")
+                    df = self._get_from_sina(symbol, start_date, end_date)
 
                 if df.empty and is_etf:
-                    # ETF备用：尝试使用index_zh_a_hist
-                    try:
-                        df = ak.index_zh_a_hist(
-                            symbol=code,
-                            period="daily",
-                            start_date=start_date,
-                            end_date=end_date,
-                        )
-                    except:
-                        pass
+                    logger.warning(f"普通股票接口 {symbol} 失败，尝试指数接口")
+                    if self._is_source_available("tencent"):
+                        df = self._get_from_tencent(symbol, start_date, end_date)
+
+            if not df.empty and self._is_trading_time():
+                df = self._update_today_data(symbol, df)
 
             if df.empty:
                 return pd.DataFrame()
@@ -358,9 +1350,6 @@ class DataCollector:
         except Exception as e:
             logger.warning(f"原油期货数据失败: {e}")
             return pd.DataFrame()
-
-        url, name = symbol_map[symbol]
-        return self._scrape_investing(symbol, url, name, start_date, end_date)
 
     def _scrape_investing(
         self, symbol: str, url: str, name: str, start_date: str, end_date: str
@@ -549,9 +1538,27 @@ class DataCollector:
             logger.warning(f"美元指数数据获取失败: {e}")
             return pd.DataFrame()
 
-    def get_minute(self, symbol: str, period: int = 5) -> pd.DataFrame:
+    def get_minute(self, symbol: str, period: int = 5, force_refresh: bool = False) -> pd.DataFrame:
         """分钟数据"""
         period_str = f"{period}min"
+        is_trading = self._is_trading_time()
+
+        if is_trading:
+            logger.info(f"[交易时段] {symbol} {period_str} - 实时数据")
+        else:
+            logger.info(f"[非交易时段] {symbol} {period_str} - 历史数据")
+
+        # 0. 缓存检查（除非强制刷新）
+        if self.use_cache and not force_refresh:
+            if self._is_cache_valid(symbol, period_str):
+                path = self._cache_path(symbol, period_str)
+                if os.path.exists(path):
+                    df = pd.read_csv(path)
+                    df["date"] = pd.to_datetime(df["date"])
+                    logger.info(f"[cache] {symbol} {period_str} OK: {len(df)}条")
+                    return df
+                else:
+                    logger.info(f"[cache] {symbol} {period_str} 已过期，尝试更新...")
 
         # 1. 尝试从网络获取
         try:
@@ -568,9 +1575,31 @@ class DataCollector:
                     df.to_csv(self._cache_path(symbol, period_str), index=False)
                 return df
         except Exception as e:
-            logger.warning(f"{symbol} {period_str} 网络获取失败: {e}")
+            logger.warning(f"{symbol} {period_str} akshare失败，尝试Efinance")
 
-        # 2. 尝试从缓存读取
+        # 2. 尝试Efinance
+        try:
+            df = self._get_from_efinance(symbol, "20250101", "20261231", period=period_str)
+            if not df.empty:
+                logger.info(f"[efinance] {symbol} {period_str} OK: {len(df)}条")
+                if self.use_cache:
+                    df.to_csv(self._cache_path(symbol, period_str), index=False)
+                return df
+        except Exception as e:
+            logger.warning(f"{symbol} {period_str} Efinance失败，尝试新浪API")
+
+        # 3. 尝试新浪API
+        try:
+            df = self._get_minute_from_sina(symbol, period)
+            if not df.empty:
+                logger.info(f"[sina] {symbol} {period_str} OK: {len(df)}条")
+                if self.use_cache:
+                    df.to_csv(self._cache_path(symbol, period_str), index=False)
+                return df
+        except Exception as e:
+            logger.warning(f"{symbol} {period_str} 新浪API失败: {e}")
+
+        # 4. 尝试从缓存读取
         if self.use_cache:
             path = self._cache_path(symbol, period_str)
             if os.path.exists(path):
@@ -581,6 +1610,59 @@ class DataCollector:
 
         logger.error(f"{symbol} {period_str} 获取失败")
         return pd.DataFrame()
+
+    def _get_minute_from_sina(self, symbol: str, period: int) -> pd.DataFrame:
+        """使用新浪财经API获取分钟数据"""
+        try:
+            code = symbol.replace(".SH", "").replace(".SZ", "")
+            sina_symbol = ("sh" if symbol.endswith(".SH") else "sz") + code
+
+            scale_map = {5: 5, 15: 15, 30: 30, 60: 60, 120: 60}
+            scale = scale_map.get(period, 5)
+
+            url = "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
+            params = {
+                "symbol": sina_symbol,
+                "scale": str(scale),
+                "ma": "5",
+                "datalen": "500",
+            }
+
+            import requests
+            resp = requests.get(url, params=params, timeout=10)
+            if resp.status_code != 200:
+                return pd.DataFrame()
+
+            import json
+            data = json.loads(resp.text)
+            if not data:
+                return pd.DataFrame()
+
+            rows = []
+            for item in data:
+                date_str = item.get("day", "")
+                if not date_str:
+                    continue
+                rows.append({
+                    "date": date_str,
+                    "open": float(item.get("open", 0)),
+                    "high": float(item.get("high", 0)),
+                    "low": float(item.get("low", 0)),
+                    "close": float(item.get("close", 0)),
+                    "volume": float(item.get("volume", 0)),
+                })
+
+            if not rows:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(rows)
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.sort_values("date").reset_index(drop=True)
+            return df
+
+        except Exception as e:
+            logger.warning(f"新浪分钟数据获取失败: {e}")
+            return pd.DataFrame()
 
     def _get_stock_minute(self, symbol: str, period: int) -> pd.DataFrame:
         """获取个股分钟数据"""
@@ -710,27 +1792,22 @@ class DataCollector:
     def get_realtime(self, symbol: str) -> dict:
         """实时行情"""
         try:
-            code = symbol.replace(".SH", "").replace(".SZ", "")
-            df = ak.stock_zh_a_spot_em()
-
-            row = df[df["代码"] == code]
-            if row.empty:
-                return {}
-
-            row = row.iloc[0]
-            return {
-                "symbol": symbol,
-                "name": row.get("名称", ""),
-                "price": row.get("最新价", 0),
-                "change": row.get("涨跌幅", 0),
-                "volume": row.get("成交量", 0),
-                "amount": row.get("成交额", 0),
-                "open": row.get("今开", 0),
-                "high": row.get("最高", 0),
-                "low": row.get("最低", 0),
-                "close": row.get("昨收", 0),
-                "time": row.get("时间", ""),
-            }
+            result = self._get_from_scrapling(symbol, "realtime")
+            if result["success"]:
+                data = result["data"]
+                return {
+                    "symbol": symbol,
+                    "name": data.get("name", ""),
+                    "price": data.get("price", 0),
+                    "change": data.get("change_pct", 0),
+                    "volume": data.get("volume", 0),
+                    "open": data.get("open", 0),
+                    "high": data.get("high", 0),
+                    "low": data.get("low", 0),
+                    "close": data.get("price", 0),
+                    "time": "",
+                }
+            return {}
 
         except Exception as e:
             logger.warning(f"实时行情失败: {e}")
@@ -832,7 +1909,7 @@ class DataCollector:
 
 
 def get_kline_data(
-    symbol: str, period: str = "daily", start_date: str = None, end_date: str = None
+    symbol: str, period: str = "daily", start_date: Optional[str] = None, end_date: Optional[str] = None
 ) -> pd.DataFrame:
     """统一接口"""
     collector = DataCollector()

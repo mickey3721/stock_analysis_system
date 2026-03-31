@@ -94,14 +94,15 @@ def get_stocks():
 
 
 @app.get("/kline/{symbol}", response_model=KLineData)
-def get_kline(symbol: str, period: str = Query("daily")):
+def get_kline(symbol: str, period: str = Query("daily"), refresh: int = Query(0)):
     """获取K线数据"""
     try:
+        force_refresh = bool(refresh)
         if period == "daily":
-            df = collector.get_stock_daily(symbol, period="daily")
+            df = collector.get_stock_daily(symbol, period="daily", force_refresh=force_refresh)
         else:
             p = int(period.replace("min", ""))
-            df = collector.get_minute(symbol, p)
+            df = collector.get_minute(symbol, p, force_refresh=force_refresh)
 
         if df.empty:
             return KLineData(
@@ -121,15 +122,16 @@ def get_kline(symbol: str, period: str = Query("daily")):
 
 
 @app.get("/analyze/{symbol}", response_model=AnalysisResult)
-def analyze_stock(symbol: str, period: str = Query("daily")):
+def analyze_stock(symbol: str, period: str = Query("daily"), refresh: int = Query(0)):
     """分析股票"""
     try:
         # 获取数据
+        force_refresh = bool(refresh)
         if period == "daily":
-            df = collector.get_stock_daily(symbol, period="daily")
+            df = collector.get_stock_daily(symbol, period="daily", force_refresh=force_refresh)
         else:
             p = int(period.replace("min", ""))
-            df = collector.get_minute(symbol, p)
+            df = collector.get_minute(symbol, p, force_refresh=force_refresh)
 
         if df.empty:
             return None
@@ -209,6 +211,30 @@ def get_realtime(symbol: str):
         return collector.get_realtime(symbol)
     except Exception as e:
         return {}
+
+
+@app.post("/refresh/{symbol}")
+def refresh_symbol(symbol: str, period: str = Query("daily")):
+    """强制刷新指定股票数据"""
+    try:
+        if period == "daily":
+            df = collector.get_stock_daily(symbol, period="daily", force_refresh=True)
+        else:
+            p = int(period.replace("min", ""))
+            df = collector.get_minute(symbol, p, force_refresh=True)
+        
+        if df.empty:
+            return {"success": False, "message": "刷新失败", "symbol": symbol}
+        
+        return {
+            "success": True,
+            "message": f"刷新成功，更新 {len(df)} 条数据",
+            "symbol": symbol,
+            "count": len(df),
+            "latest_date": df["date"].iloc[-1].strftime("%Y-%m-%d") if len(df) > 0 else None
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e), "symbol": symbol}
 
 
 @app.get("/intraday/{symbol}")

@@ -1,9 +1,16 @@
 # 股票智能分析系统依赖
 
-# 数据采集
+# 数据采集（主源）
 akshare>=1.12.0
 requests>=2.31.0
 yfinance>=0.2.0
+
+# 数据采集（备用源）
+baostock>=0.8.8
+efinance>=0.3.0
+finnhub-python>=2.4.0
+tickflow[all]>=0.1.0
+pysnowball>=0.1.0
 
 # 数据处理
 pandas>=2.0.0

@@ -2,6 +2,15 @@
   <div class="home">
     <div class="home-header">
       <h1>股票智能分析系统</h1>
+      <van-button 
+        size="small" 
+        type="primary" 
+        :loading="refreshing"
+        @click="handleRefresh"
+        class="refresh-btn"
+      >
+        {{ refreshing ? '刷新中...' : '刷新数据' }}
+      </van-button>
     </div>
     
     <div class="home-content">
@@ -186,7 +195,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { CellGroup, Cell, Loading, Empty } from 'vant'
+import { CellGroup, Cell, Loading, Empty, Button, showToast } from 'vant'
 import * as echarts from 'echarts'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
@@ -205,6 +214,7 @@ const report = ref(null)
 const reportLoading = ref(false)
 const reportError = ref('')
 const marketIndexes = ref([])
+const refreshing = ref(false)
 
 // Chart
 const isIndexOrFuture = computed(() => {
@@ -485,6 +495,31 @@ const loadMarketIndexes = async () => {
   }
 }
 
+const handleRefresh = async () => {
+  if (!selectedSymbol.value) {
+    showToast('请先选择股票')
+    return
+  }
+  
+  refreshing.value = true
+  
+  try {
+    // 刷新当前选中的股票数据
+    const res = await api.refreshSymbol(selectedSymbol.value, 'daily')
+    if (res.data && res.data.success) {
+      showToast('数据已刷新')
+      // 重新加载报告
+      await loadReport(selectedSymbol.value)
+    } else {
+      showToast(res.data?.message || '刷新失败')
+    }
+  } catch (e) {
+    showToast('刷新失败')
+  } finally {
+    refreshing.value = false
+  }
+}
+
 const getSignalClass = (signal) => {
   if (signal === '买入') return 'buy'
   if (signal === '卖出') return 'sell'
@@ -527,6 +562,9 @@ onMounted(() => {
   padding: 16px 20px;
   border-bottom: 1px solid #252a42;
   text-align: center;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .home-header h1 {
@@ -534,6 +572,10 @@ onMounted(() => {
   font-weight: 700;
   color: #e2e8f0;
   margin: 0;
+}
+
+.refresh-btn {
+  font-size: 12px;
 }
 
 .home-content {

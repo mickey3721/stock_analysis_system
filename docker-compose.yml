@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build:
@@ -10,9 +8,15 @@ services:
       - "8899:8899"
     volumes:
       - ./stock_analysis/data:/app/data
+      - backend-cache:/app/data/cache
+    env_file:
+      - .env.snowball
     environment:
       - PYTHONUNBUFFERED=1
+      - TZ=Asia/Shanghai
     restart: unless-stopped
+    networks:
+      - stock-network
 
   frontend:
     build:
@@ -24,3 +28,13 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    networks:
+      - stock-network
+
+networks:
+  stock-network:
+    driver: bridge
+
+volumes:
+  backend-cache:
+    driver: local
