@@ -563,23 +563,23 @@ class DataCollector:
             code = symbol.replace(".SH", "").replace(".SZ", "")
             sina_symbol = ("sh" if symbol.endswith(".SH") else "sz") + code
 
-            start_str = start_date
-            end_str = end_date
-            if start_date and len(start_date) == 8:
-                start_str = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:8]}"
-            if end_date and len(end_date) == 8:
-                end_str = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:8]}"
-
-            url = "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
+            start_str = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:8]}" if start_date and len(start_date) == 8 else "2020-01-01"
+            end_str = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:8]}" if end_date and len(end_date) == 8 else "2030-12-31"
+            
+            url = "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
             params = {
                 "symbol": sina_symbol,
                 "scale": "240",
-                "ma": "5",
-                "datalen": "1000",
+                "ma": "no",
+                "datalen": "1024",
             }
-
+            headers = {
+                "Referer": "https://finance.sina.com.cn/stock/",
+                "User-Agent": "Mozilla/5.0"
+            }
+            
             import requests
-            resp = requests.get(url, params=params, timeout=10)
+            resp = requests.get(url, params=params, headers=headers, timeout=10)
             if resp.status_code != 200:
                 return pd.DataFrame()
 
