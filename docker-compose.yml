@@ -15,8 +15,6 @@ services:
       - PYTHONUNBUFFERED=1
       - TZ=Asia/Shanghai
     restart: unless-stopped
-    networks:
-      - stock-network
 
   frontend:
     build:
@@ -28,12 +26,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
-    networks:
-      - stock-network
-
-networks:
-  stock-network:
-    driver: bridge
 
 volumes:
   backend-cache:

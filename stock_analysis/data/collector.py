@@ -60,6 +60,8 @@ logger = logging.getLogger(__name__)
 
 class DataCollector:
     """数据采集器 - v4 优化版"""
+    
+    CORS_PROXY = "https://cors-api-single.gogogolss.dpdns.org/?url="
 
     def __init__(self, use_cache: bool = True, cache_dir: str = "data/cache"):
         self.use_cache = use_cache
@@ -1167,7 +1169,8 @@ class DataCollector:
                     pass
                 return None
 
-            def get_eastmoney():
+            def get_eastmoney_direct():
+                """东方财富直连"""
                 try:
                     url = f"http://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&ut=fa5fd1943c7b386f172d6893dbfba10b&fields=f2,f3,f4,f5,f6,f15,f16,f17,f18&secids={market}.{code}"
                     headers = {"User-Agent": "Mozilla/5.0", "Referer": "http://quote.eastmoney.com/"}
@@ -1177,17 +1180,66 @@ class DataCollector:
                         if data.get("data", {}).get("diff"):
                             d = data["data"]["diff"][0]
                             return {
-                                "source": "eastmoney",
+                                "source": "eastmoney_direct",
                                 "open": d.get("f4", 0),
-                                "high": d.get("f15", 0),  # f15是最高价
-                                "low": d.get("f16", 0),    # f16是最低价
+                                "high": d.get("f15", 0),
+                                "low": d.get("f16", 0),
                                 "close": d.get("f2", 0),
                                 "volume": d.get("f5", 0),
                                 "amount": d.get("f6", 0),
+                                "latency": 5,
                             }
                 except:
                     pass
                 return None
+
+            def get_eastmoney_cors():
+                """东方财富CORS代理"""
+                try:
+                    proxy_url = f"{self.CORS_PROXY}http://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&ut=fa5fd1943c7b386f172d6893dbfba10b&fields=f2,f3,f4,f5,f6,f15,f16,f17,f18&secids={market}.{code}"
+                    resp = requests.get(proxy_url, timeout=10)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get("data", {}).get("diff"):
+                            d = data["data"]["diff"][0]
+                            return {
+                                "source": "eastmoney_cors",
+                                "open": d.get("f4", 0),
+                                "high": d.get("f15", 0),
+                                "low": d.get("f16", 0),
+                                "close": d.get("f2", 0),
+                                "volume": d.get("f5", 0),
+                                "amount": d.get("f6", 0),
+                                "latency": 10,
+                            }
+                except:
+                    pass
+                return None
+
+            def get_eastmoney():
+                """东方财富 - 直连和CORS同时获取，择优"""
+                import concurrent.futures
+                
+                results = []
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                    future_direct = executor.submit(get_eastmoney_direct)
+                    future_cors = executor.submit(get_eastmoney_cors)
+                    
+                    for future in concurrent.futures.as_completed([future_direct, future_cors], timeout=15):
+                        try:
+                            result = future.result()
+                            if result:
+                                results.append(result)
+                        except:
+                            pass
+                
+                if not results:
+                    return None
+                
+                # 优先选择有数据的（通常直连更快）
+                results.sort(key=lambda x: x.get("latency", 999))
+                return results[0]
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                 futures = {
@@ -1760,48 +1812,100 @@ class DataCollector:
             return pd.DataFrame()
 
     def _get_stock_minute(self, symbol: str, period: int) -> pd.DataFrame:
-        """获取个股分钟数据"""
-        try:
-            code = symbol.replace(".SH", "").replace(".SZ", "")
-            df = ak.stock_zh_a_hist_min_em(symbol=code, period=f"{period}分钟")
-
-            if df.empty:
-                return pd.DataFrame()
-
-            col_map = {
-                "时间": "date",
-                "开盘": "open",
-                "最高": "high",
-                "最低": "low",
-                "收盘": "close",
-                "成交量": "volume",
-            }
-
-            new_cols = [col_map.get(c, c) for c in df.columns]
-            df.columns = new_cols
-
-            if "date" not in df.columns:
-                return pd.DataFrame()
-
-            df["date"] = pd.to_datetime(df["date"], errors="coerce")
-            df = df.dropna(subset=["date", "close"])
-
-            for c in ["open", "high", "low", "close"]:
-                if c in df.columns:
-                    df[c] = pd.to_numeric(df[c], errors="coerce")
-
-            if "volume" not in df.columns:
-                df["volume"] = 0
-
-            return (
-                df[["date", "open", "high", "low", "close", "volume"]]
-                .sort_values("date")
-                .reset_index(drop=True)
-            )
-
-        except Exception as e:
-            logger.warning(f"个股分钟数据失败: {e}")
+        """获取个股分钟数据 - 直连和CORS同时获取"""
+        import concurrent.futures
+        
+        code = symbol.replace(".SH", "").replace(".SZ", "")
+        secid = "1." + code if code.startswith("6") or code.startswith("5") else "0." + code
+        klt_map = {5: 5, 15: 15, 30: 30, 60: 60}
+        klt = klt_map.get(period, 5)
+        
+        base_url = f"https://push2his.eastmoney.com/api/qt/stock/kline/get?fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6%2Cf7%2Cf8%2Cf9%2Cf10%2Cf11%2Cf12%2Cf13&fields2=f51%2Cf52%2Cf53%2Cf54%2Cf55%2Cf56%2Cf57%2Cf58%2Cf59%2Cf60%2Cf61&beg=19000101&end=20500101&rtntype=6&secid={secid}&klt={klt}&fqt=1"
+        
+        def fetch_direct():
+            """直连获取"""
+            try:
+                df = ak.stock_zh_a_hist_min_em(symbol=code, period=f"{period}分钟")
+                if not df.empty:
+                    df.attrs["source"] = "akshare_direct"
+                    return df
+            except:
+                pass
             return pd.DataFrame()
+        
+        def fetch_cors():
+            """CORS代理获取"""
+            try:
+                proxy_url = self.CORS_PROXY + base_url
+                resp = requests.get(proxy_url, timeout=15)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("data") and data["data"].get("klines"):
+                        klines = data["data"]["klines"]
+                        rows = []
+                        for kline in klines:
+                            parts = kline.split(",")
+                            if len(parts) >= 6:
+                                rows.append({
+                                    "date": parts[0],
+                                    "open": float(parts[1]),
+                                    "close": float(parts[2]),
+                                    "high": float(parts[3]),
+                                    "low": float(parts[4]),
+                                    "volume": float(parts[5]) if parts[5] else 0,
+                                })
+                        if rows:
+                            df = pd.DataFrame(rows)
+                            df["date"] = pd.to_datetime(df["date"])
+                            df.attrs["source"] = "eastmoney_cors"
+                            return df.sort_values("date")
+            except:
+                pass
+            return pd.DataFrame()
+        
+        def fetch_sina():
+            """Sina备用获取"""
+            try:
+                df = self._get_minute_from_sina(symbol, period)
+                if not df.empty:
+                    df.attrs["source"] = "sina"
+                    return df
+            except:
+                pass
+            return pd.DataFrame()
+        
+        # 并发获取
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {
+                executor.submit(fetch_direct): "direct",
+                executor.submit(fetch_cors): "cors", 
+                executor.submit(fetch_sina): "sina"
+            }
+            for future in concurrent.futures.as_completed(futures, timeout=30):
+                try:
+                    df = future.result()
+                    if not df.empty:
+                        results.append(df)
+                except:
+                    pass
+        
+        # 优先使用直连数据
+        for df in results:
+            if df.attrs.get("source") == "akshare_direct":
+                return df
+        
+        # 其次CORS
+        for df in results:
+            if df.attrs.get("source") == "eastmoney_cors":
+                return df
+        
+        # 最后Sina
+        for df in results:
+            if df.attrs.get("source") == "sina":
+                return df
+        
+        return pd.DataFrame()
 
     def _get_index_minute(self, symbol: str, period: int) -> pd.DataFrame:
         """获取指数分钟数据"""
