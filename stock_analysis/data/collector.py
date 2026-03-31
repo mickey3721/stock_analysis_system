@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 # 数据源优先级配置
 DATA_SOURCE_PRIORITY = {
-    "daily": ["tencent", "baostock", "sina", "tickflow"],
+    "daily": ["tencent", "baostock", "sina", "sina_web", "tickflow"],
     "minute": ["akshare", "efinance", "sina"],
     "index_daily": ["tencent", "baostock", "sina"],
 }
@@ -480,6 +480,10 @@ class DataCollector:
                     df = self._get_from_sina(symbol, start_date or "20250101", end_date or "20261231")
                     if not df.empty:
                         return df, "sina"
+                elif src == "sina_web":
+                    df = self._get_from_sina_web(symbol, start_date or "20250101", end_date or "20261231")
+                    if not df.empty:
+                        return df, "sina_web"
                 elif src == "tickflow":
                     df = self._get_from_tickflow(symbol, start_date or "20250101", end_date or "20261231")
                     if not df.empty:
@@ -611,6 +615,74 @@ class DataCollector:
 
         except Exception as e:
             logger.warning(f"新浪财经数据获取失败: {e}")
+            return pd.DataFrame()
+
+    def _get_from_sina_web(
+        self, symbol: str, start_date: str, end_date: str
+    ) -> pd.DataFrame:
+        """使用新浪财经网页爬取历史K线数据"""
+        try:
+            code = symbol.replace(".SH", "").replace(".SZ", "")
+            sina_symbol = ("sh" if symbol.endswith(".SH") else "sz") + code
+            
+            url = f"https://finance.sina.com.cn/realstock/company/{sina_symbol}/klc_kl.js"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Referer": "https://finance.sina.com.cn/",
+            }
+            
+            resp = requests.get(url, headers=headers, timeout=10)
+            if resp.status_code != 200:
+                return pd.DataFrame()
+            
+            text = resp.text
+            if "var H_" not in text:
+                return pd.DataFrame()
+            
+            import json
+            start_idx = text.find("[")
+            end_idx = text.rfind("]") + 1
+            if start_idx < 0:
+                return pd.DataFrame()
+            
+            json_str = text[start_idx:end_idx]
+            data = json.loads(json_str)
+            
+            if not data:
+                return pd.DataFrame()
+            
+            rows = []
+            for item in data:
+                if len(item) >= 6:
+                    date_str = item[0]
+                    if start_date and len(start_date) == 8:
+                        check_date = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:8]}"
+                        if date_str < check_date:
+                            continue
+                    if end_date and len(end_date) == 8:
+                        check_date = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:8]}"
+                        if date_str > check_date:
+                            continue
+                    
+                    rows.append({
+                        "date": date_str,
+                        "open": float(item[1]),
+                        "close": float(item[2]),
+                        "high": float(item[3]),
+                        "low": float(item[4]),
+                        "volume": float(item[5]) if len(item) > 5 else 0,
+                    })
+            
+            if not rows:
+                return pd.DataFrame()
+            
+            df = pd.DataFrame(rows)
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.sort_values("date").reset_index(drop=True)
+            return df
+            
+        except Exception as e:
+            logger.warning(f"新浪财经网页数据获取失败: {e}")
             return pd.DataFrame()
 
     def _get_from_tencent(
