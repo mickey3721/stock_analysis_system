@@ -62,7 +62,10 @@ class DataCollector:
     """数据采集器 - v4 优化版"""
     
     CORS_PROXY = "https://cors-api-single.gogogolss.dpdns.org/?url="
-
+    
+    # 数据源列表（用于统一配置）
+    DATA_SOURCES = ["snowball", "tencent", "baostock", "sina", "tickflow"]
+    
     def __init__(self, use_cache: bool = True, cache_dir: str = "data/cache"):
         self.use_cache = use_cache
         self.cache_dir = cache_dir
@@ -432,8 +435,9 @@ class DataCollector:
         return pd.DataFrame()
 
     def _get_with_source(self, symbol: str, start_date: Optional[str], end_date: Optional[str]) -> Tuple[pd.DataFrame, str]:
-        """统一数据源获取（按优先级配置）"""
+        """统一数据源获取（双轨并发 + 优先级）"""
         import time
+        import concurrent.futures
         start_time = time.time()
         
         is_china_index = symbol in ["000001.SH", "000300.SH", "399006.SZ", "399001.SZ"]
@@ -452,45 +456,100 @@ class DataCollector:
         else:
             sources = DATA_SOURCE_PRIORITY["daily"]
         
-        # 添加雪球(如果有Token) - 用于所有A股个股
-        if self.snowball_token and is_china_index and not is_etf:
-            sources = ["snowball"] + sources
+        # 添加雪球(如果有Token) - 用于所有A股
+        if self.snowball_token:
+            if is_china_index and not is_etf:
+                sources = ["snowball"] + sources
+            elif not is_china_index and not is_etf:
+                sources = ["snowball"] + sources
         
-        # 个股也添加雪球优先
-        if self.snowball_token and not is_china_index and not is_etf:
-            sources = ["snowball"] + sources
+        # 并发获取所有数据源
+        results = []
         
-        # 按优先级尝试获取
-        df = pd.DataFrame()
-        source = "unknown"
-        
-        for src in sources:
-            if not self._is_source_available(src):
-                continue
-            
+        def fetch_source(src):
             try:
                 if src == "tencent":
                     df = self._get_from_tencent(symbol, start_date, end_date)
+                    if not df.empty:
+                        return df, "tencent"
                 elif src == "baostock":
                     df = self._get_from_baostock(symbol, start_date, end_date)
+                    if not df.empty:
+                        return df, "baostock"
                 elif src == "sina":
-                    df = self._get_from_sina(symbol, start_date or "", end_date or "")
+                    df = self._get_from_sina(symbol, start_date or "20250101", end_date or "20261231")
+                    if not df.empty:
+                        return df, "sina"
                 elif src == "tickflow":
                     df = self._get_from_tickflow(symbol, start_date or "20250101", end_date or "20261231")
+                    if not df.empty:
+                        return df, "tickflow"
                 elif src == "snowball":
-                    # 雪球需要 SH600299 格式
                     sf_symbol = "SH" + symbol.replace(".SH", "").replace(".SZ", "")
                     df = self._get_kline_from_snowball(sf_symbol, "day", 500)
-                
-                if not df.empty:
-                    source = src
-                    break
+                    if not df.empty:
+                        return df, "snowball"
             except Exception as e:
                 logger.debug(f"{src} 获取失败: {e}")
-                continue
+            return pd.DataFrame(), "unknown"
         
-        self._record_source_stat(source if source != "unknown" else "failed", source != "unknown", time.time() - start_time)
-        return df, source
+        # 并发执行所有数据源
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(sources), 5)) as executor:
+            futures = {executor.submit(fetch_source, src): src for src in sources}
+            for future in concurrent.futures.as_completed(futures, timeout=30):
+                try:
+                    df, source = future.result()
+                    if not df.empty:
+                        results.append((df, source))
+                except:
+                    pass
+        
+        # 优先选择雪球，其次按配置顺序
+        for src in sources:
+            for df, source in results:
+                if source == src:
+                    duration = time.time() - start_time
+                    self._record_source_stat(source, True, duration)
+                    return df, source
+        
+        # 如果都没有，返回第一个有效结果
+        if results:
+            df, source = results[0]
+            duration = time.time() - start_time
+            self._record_source_stat(source, True, duration)
+            return df, source
+        
+        self._record_source_stat("failed", False, time.time() - start_time)
+        return pd.DataFrame(), "unknown"
+
+    def _test_data_source(self, source: str) -> bool:
+        """测试数据源可用性"""
+        try:
+            if source == "tencent":
+                url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+                r = requests.get(url, timeout=5)
+                return r.status_code == 200
+            elif source == "snowball":
+                import pysnowball as ball
+                if self.snowball_token:
+                    ball.set_token(self.snowball_token)
+                    result = ball.kline("SH000001", period="day", count=1)
+                    return result and result.get("error_code") == 0
+            elif source == "baostock":
+                import baostock as bs
+                lg = bs.login()
+                bs.logout()
+                return lg.error_code == "0"
+            elif source == "sina":
+                url = "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
+                r = requests.get(url, timeout=5)
+                return r.status_code == 200
+            elif source == "tickflow":
+                r = requests.get("https://free-api.tickflow.org/v1/klines?symbol=000001.SH&period=1d&count=1", timeout=5)
+                return r.status_code == 200
+        except:
+            pass
+        return False
 
     def _get_from_sina(
         self, symbol: str, start_date: str, end_date: str
